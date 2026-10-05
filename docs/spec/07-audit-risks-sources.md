@@ -907,7 +907,8 @@ owner may overrule):
       Production needs a confirmed canary of the same model version on the slot, nothing more.
 - [ ] P5 spec: benchmarks run on the staging card; Эра's production card class may differ. A benchmark records the
       card class and the promotion modal shows a mismatch, but does not refuse it. Likewise a staging Triton version
-      different from the delivery target's is shown, not refused, and both versions go into the record.
+      different from the delivery target's is shown, not refused, and both versions go into the record. **Changed by D4:** a
+      server release other than the one the export's engine was built for is refused (the engine would not load).
 - [ ] P5 spec: the parity sample comes from the project's first target golden set, and up to 20 of its utterances
       travel in every delivery bundle as the smoke check. For a golden set cut from Эра's calls that is Эра's own audio
       going back to Эра's host; it must still be redacted when R29 lands if bundles are kept outside the production host.
@@ -940,7 +941,9 @@ owner may overrule):
       records `serving.engine` (TensorRT version, card class, GPU name, compute capability) in the deployable. A delivery
       target on another card class or Triton release cannot load it: D4's promotion checks should refuse that (not only
       show it), and an engine for Эра's card needs an export on that card class (not built: one export per (version,
-      profile, format)). The ONNX step graph in the deployable is the portable artifact to rebuild from.
+      profile, format)). The ONNX step graph in the deployable is the portable artifact to rebuild from. **D4 (2026-10-05):** the
+      promotion's `engine` check refuses it (`target-does-not-serve`) when both sides name the card class and the
+      server release; the benchmark's own card class is still only shown.
 - [x] P5 D1: the staging target seeded from `serving.staging_target` names Triton 26.07; the export's engine builder is
       26.08's (`packs.nemo.export_server_version`). The staging server must run 26.08 (E1's workarounds were measured
       on it): stream D2 pins `serving.image` and the staging target's version. Stream D12 (2026-10-05): the seed
@@ -975,6 +978,22 @@ owner may overrule):
 - [ ] P5 D12: the NeMo pack's conformance run (nightly) now reaches the export, parity and benchmark stages through
       `nemotron_serve`, which needs a staging server in its lease; the nightly image has no Triton, so those stages fail
       there until the nightly job starts one (the compose profile `serving`) or the suite skips serve without a lease.
+- [ ] P5 D4: `deployments.new` requires `replay.source` (a registered source for the recordings: "no licence, no
+      ingest"), which 02's sketch `{mount, path?}` did not name; Эра's recordings need a production source registered
+      (and cleared) before their first shadow.
+- [ ] P5 D4: "newest unreplayed calls first" uses the mount's file modification times (an S3 mount's stamp is an
+      ETag: its calls are taken in reverse path order instead) and sizes a call from its WAV header, else at 16 kB/s
+      (G.711 stereo). Эра's recordings layout and format (R32 е) may need a better clock (a sidecar's call time).
+- [ ] P5 D4: the nightly shadow replay runs as the system actor without a GPU-budget decision (a project's spend is
+      not checked at night); `shadowReplays.new` goes through the usual `gpu-spend` policy.
+- [ ] P5 D4: shadow retention evicts the night's artifacts permanently, but a backup mirror that already copied them
+      keeps them; F1's retention sweep (R28) should cover the mirror too.
+- [ ] P5 D4: `sdp_ingest` moved to @3 (`files`); a project repository that pins `@2` (the stand's projects) must bump
+      its pins: a worker publishes one version of a kind.
+- [ ] P5 D4: marking a shadow segment for triage (11, Shadow panel) is left to stream F2 (the triage queue of
+      production samples); the Shadow panel opens segments in Diff and Audio only.
+- [ ] P5 D4: the benchmark chart draws what `models.get` carries per benchmark (the verdict level's p95 against the
+      budget, the most streams within it); a per-level latency curve (R53) needs the report's levels in the API.
 
 ## Sources
 

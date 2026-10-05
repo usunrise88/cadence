@@ -823,10 +823,13 @@ Deployment
 - [ ] `models.export` (ONNX cache-aware
       encoder/decoder/joint; GGUF where a CPU target exists); `models.parity`; Triton repository with sequence
       batching; `models.benchmark` (p50/p95, RTF, streams per card)
-- [ ] Deployments and Promotions: shadow (nightly replay from the call-recording mount), canary and production as
+- [x] Deployments and Promotions: shadow (nightly replay from the call-recording mount), canary and production as
       approvals; delivery script generated for the production host; rollback by script; boost lists as decode config
+      — streams D3 (records, bundles) and D4 (`deployments.*`, `shadowReplays.*`, migration 0051; 02 "Deployments as
+      built", 03 "Shadow replay"); real shadow hours wait for Эра's recordings mount (R32 е)
 - [ ] Hot words at decode (RNNT phrase boosting), dynamic per-call candidates per the Эра **spec**
-- [ ] Deployment targets declare the families and formats they serve; promotion checks them (R46)
+- [x] Deployment targets declare the families and formats they serve; promotion checks them (R46) — D2 (targets),
+      D4 (the checks, with the engine's card class and server release)
 - [ ] Transcriptions against the staging Triton deployment: production and candidate side by side, live and from
       files (R47); benchmark and shadow charts; PII spans and boosted terms as audio-view tracks (R51, R53)
 
@@ -839,7 +842,8 @@ Flywheel
       "Weekly flywheel", "Improve on telephony", "Fix names and terms" playbooks
 - [ ] Samples push API `POST /projects/{p}/samples` before the first canary
 
-Panels: Model, Shadow, Triage queue (triage mode); Ops workspace.
+Panels: Model, Shadow, Triage queue (triage mode); Ops workspace. — Model's deploy sections, Shadow, Settings →
+Deployment targets and the Ops workspace are built (stream D4); Triage queue mode waits for F2.
 
 ---
 

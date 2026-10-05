@@ -75,11 +75,30 @@ func Lookup(ctx context.Context, q storage.Querier, ref string) (Utterance, erro
 			coalesce((SELECT min(uri) FROM utterance_uris x WHERE x.utterance_id = u.id), '')
 		FROM utterances u WHERE u.id = $1 OR u.content_hash = $1 LIMIT 1`, ref).
 		Scan(&u.ID, &u.Hash, &u.Duration, &u.SampleRate, &u.Channels, &u.URI)
+	if errors.Is(err, pgx.ErrNoRows) && strings.HasPrefix(ref, "b3:") {
+		return lookupShadowSegment(ctx, q, ref)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Utterance{}, problems.NotFound.New("no utterance %q in the registry", ref)
 	}
 	if err != nil {
 		return Utterance{}, fmt.Errorf("look up utterance %s: %w", ref, err)
+	}
+	return u, nil
+}
+
+// lookupShadowSegment finds a segment a shadow replay cut (phase 5 · stream D4: its canonical 16 kHz mono WAV in the
+// content store), while its night's texts are kept (deploy.shadow_artifact_retention_days): the Shadow panel opens
+// the most divergent segments in Audio by their hash.
+func lookupShadowSegment(ctx context.Context, q storage.Querier, hash string) (Utterance, error) {
+	u := Utterance{Target: -1, ID: hash, Hash: hash, SampleRate: 16000, Channels: 1}
+	err := q.QueryRow(ctx, `SELECT s.duration_s, r.project_id FROM shadow_segments s JOIN shadow_replays r ON r.id = s.replay_id
+		WHERE s.hash = $1 AND r.texts_evicted_at IS NULL LIMIT 1`, hash).Scan(&u.Duration, &u.ProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Utterance{}, problems.NotFound.New("no utterance %q in the registry", hash)
+	}
+	if err != nil {
+		return Utterance{}, fmt.Errorf("look up shadow segment %s: %w", hash, err)
 	}
 	return u, nil
 }

@@ -7,12 +7,16 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ActorBadge, EmptyState } from "@/shell/entity/primitives";
 import { errorMessage, GATE_CLASS, GATE_GLYPH, openDocument, openPanelById, runCommand, useProject, type PanelProps } from "@/shell/panel";
+import { DeploymentsSection } from "./DeploymentsSection";
+import { ExportsSection } from "./ExportsSection";
 
 // The Model document (docs/spec/11-ui-panels.md "Panel catalogue", Model; R22): a registered model version — the
 // checkpoint it publishes, the gate verdict and the eval it was registered with, its lineage (run, mix, recipe,
 // dataset versions), the projects that use it, and the model card. The card is Markdown written by the control plane
 // from the eval; it renders without raw HTML, and links open in a new tab. Set as baseline points the open project's
-// @baseline at it (aliases.set, an approval). Export, promote and roll back arrive with deployment (phase 5).
+// @baseline at it (aliases.set, an approval). From phase 5 its exports (parity, benchmarks), its deployments in the
+// open project with their shadow progress, promotions and rollbacks (confirm modal), the slot's promotion chain and a
+// pending delivery's receipt box (ExportsSection, DeploymentsSection).
 
 export function ModelEmpty() {
   return <EmptyState step="record" title="No model open" hint="Register a checkpoint from a passed Eval report, or open a model from the Library." />;
@@ -184,6 +188,8 @@ function Overview({ m }: { m: ModelVersion }) {
         )}
       </section>
       <BaselineSection m={m} />
+      <ExportsSection m={m} />
+      <DeploymentsSection m={m} />
       <section aria-labelledby={`model-card-${m.id}`} className="flex flex-col gap-1.5">
         <h3 id={`model-card-${m.id}`} className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Model card

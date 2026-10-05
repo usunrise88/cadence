@@ -125,7 +125,7 @@ def step(kind: Any, params: Any, src: Path, dst: Path, ctx: Any = None, out: str
 
 def test_kinds_publish_complete_metadata() -> None:
     reg = registry()
-    versions = {"sdp_ingest": "2", "manifest_filter": "2"}
+    versions = {"sdp_ingest": "3", "manifest_filter": "2"}
     for name, cls in KINDS.items():
         assert reg[name]["version"] == versions.get(name, "1")
         assert cls.neutral is True
@@ -203,13 +203,36 @@ def test_long_speech_is_split_below_max_segment() -> None:
     assert all(b - a <= 5.0 + 1e-6 for a, b in cuts)
 
 
+def test_ingest_reads_the_listed_files_in_order(tmp_path: Path) -> None:
+    out, _ = ingest(tmp_path, files=["call.wav", "a.wav"], pattern="nothing-*")
+    header, lines = seg.read(out)
+    assert header["files"] == 2
+    files = [json.loads(x)["uri"] for x in (out / seg.FILES).read_text(encoding="utf-8").splitlines()]
+    assert files == ["mount://corpora/toy/r1/call.wav", "mount://corpora/toy/r1/a.wav"]
+    assert {line["file"] for line in lines} == set(files)
+
+
+@pytest.mark.parametrize(
+    ("files", "match"),
+    [
+        (["missing.wav"], "does not exist"),
+        (["../r1/a.wav"], "not a relative path"),
+        (["a.txt"], "not an audio file"),
+        (["a.wav", "a.wav"], "listed twice"),
+    ],
+)
+def test_ingest_refuses_bad_listed_files(tmp_path: Path, files: list[str], match: str) -> None:
+    with pytest.raises(StepInputError, match=match):
+        ingest(tmp_path, files=files)
+
+
 def test_ingest_writes_segments(tmp_path: Path) -> None:
     out, _ = ingest(tmp_path)
     header, lines = seg.read(out)
     assert header["format"] == "cadence.segments/1"
     assert header["source"] == {"name": "toy"}
     assert header["sourceInfo"] == {"licence": "CC-BY-4.0", "url": "https://example.org", "revision": "r1"}
-    assert header["steps"] == ["sdp_ingest@2"]
+    assert header["steps"] == ["sdp_ingest@3"]
     assert header["files"] == 4
     assert header["counts"]["segments"] == len(lines)
     by_file: dict[str, list[dict[str, Any]]] = {}
@@ -299,7 +322,7 @@ def test_normalise_filter_split(tmp_path: Path) -> None:
     assert header["filtered"]["role"] == 1  # the bot's turn
     assert header["filtered"]["empty_text"] >= 3  # untranscribed VAD segments
     assert all(x.get("text") for x in kept)
-    assert header["steps"] == ["sdp_ingest@2", "text_normalise@1", "manifest_filter@2"]
+    assert header["steps"] == ["sdp_ingest@3", "text_normalise@1", "manifest_filter@2"]
 
     split = step(
         SpeakerDisjointSplitStep,

@@ -41,6 +41,7 @@ noise_mine = "cadence_worker.steps.noise_mine:NoiseMineStep"
 segments_cut = "cadence_worker.steps.segments_cut:SegmentsCutStep"
 parity_score = "cadence_worker.steps.parity_score:ParityScoreStep"
 benchmark_score = "cadence_worker.steps.benchmark_score:BenchmarkScoreStep"
+shadow_score = "cadence_worker.steps.shadow_score:ShadowScoreStep"
 
 [dependency-groups]
 dev = [

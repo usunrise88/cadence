@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 22
+version: 23
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -1230,6 +1230,18 @@ deploy:
     description: Most call audio one night's replay takes per shadow deployment
     source: "Cadence recommendation; spike E1 measured RTF 0.18 per stream at 32 streams (fp32 engine), so 4 h of calls replay in minutes at that concurrency"
     range: { min: 0.5, max: 24 }
+  shadow_concurrency:
+    value: 32
+    unit: streams
+    description: Streams each serve step of a night's shadow replay decodes at once through the staging server (pace fast)
+    source: "Cadence recommendation; spike E1: RTF 0.18 per stream at 32 streams with the fp32 engine"
+    range: { min: 1, max: 256 }
+  shadow_worst_segments:
+    value: 50
+    unit: segments
+    description: The most divergent segments a night's shadow report lists (the Shadow panel opens them in Diff and Audio)
+    source: Cadence recommendation
+    range: { min: 0, max: 1000 }
   shadow_artifact_retention_days:
     value: 90
     unit: days

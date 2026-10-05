@@ -2425,6 +2425,23 @@
       "source": "docs/spec/04-blocks.md Block 3 (golden-set audio never reaches training)"
      }
     },
+    "files": {
+     "default": [],
+     "description": "Relative paths under path to read, in this order (the control plane's selection, e.g. a night's shadow replay: newest unreplayed calls first); [] reads every file pattern matches",
+     "items": {
+      "type": "string"
+     },
+     "title": "Files",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Relative paths under path to read, in this order (the control plane's selection, e.g. a night's shadow replay: newest unreplayed calls first); [] reads every file pattern matches",
+      "range": {
+       "maxLength": 20000
+      },
+      "source": "docs/spec/03-pipelines-defaults.md Shadow replay (phase 5 · D4)"
+     }
+    },
     "language": {
      "default": "",
      "description": "Language of every segment (BCP 47, e.g. sr-RS) unless a file's sidecar names one",
@@ -2677,7 +2694,7 @@
    "gpus": 0,
    "jobKind": "data"
   },
-  "version": "2"
+  "version": "3"
  },
  {
   "consumes": {

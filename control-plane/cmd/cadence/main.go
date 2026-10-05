@@ -389,6 +389,10 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	jobSvc.AddPeriodic("promotions.withdraw", time.Hour, srv.SweepPromotions) // no receipt after deploy.delivery_pending_days
 	// The staging targets' servers: health, and idle served models unloaded (phase 5 · stream D2).
 	jobSvc.AddPeriodic("serving.check", time.Duration(defaults.Get().Serving.HealthCheckSeconds.Value)*time.Second, srv.CheckServing)
+	// Shadow deployments replay the night's calls at deploy.shadow_replay_at; their texts go after
+	// deploy.shadow_artifact_retention_days (phase 5 · stream D4).
+	jobSvc.AddPeriodic("shadow.schedule", time.Minute, srv.TickShadow)
+	jobSvc.AddPeriodic("shadow.retention", 24*time.Hour, srv.SweepShadow)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
 		issued, err := credentials.EnsureHostTokenFile(ctx, pool, path)

@@ -5151,6 +5151,223 @@ paths:
           content: { application/gzip: { schema: { type: string, format: binary } } }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- deployments, shadow replay (phase 5 · stream D4) — add paths below this line
+  # A deployment is project work (dep_…): a model version's export on the staging target as a shadow, then promoted
+  # to a delivery target's slot as canary and production (02 "Deployment entities"). Promotions and rollbacks pass the
+  # checks first (each refusal a 422 with its help page), then an approval for everyone (rule deployments), then a
+  # signed promotion record and its delivery bundle in the approving transaction; promotions.verify confirms the stage.
+  # Shadow deployments replay the night's calls from their replay mount at deploy.shadow_replay_at (shadowReplays).
+  /projects/{p}/deployments:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: deployments.list
+      summary: The project's deployments, newest first, with stage, shadow progress and pending promotions
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          List the project's deployments (dep_…), newest first: the model version and export they serve, where (the
+          staging target for a shadow, a delivery target's slot for canary and production), the stage (shadow, canary,
+          production, retired) and state (active, pending-delivery while a promotion waits for its receipt,
+          rolled-back, retired), the shadow progress (hours replayed against deploy.shadow_min_hours, nights,
+          divergence from the comparison model with its interval) and the stage history with its promotion records.
+          Filter by model version (ver_…, @alias or model/<name>), stage or state=all (retired and rolled back too).
+      parameters:
+        - { name: version, in: query, description: "Only deployments of this model version (ver_…, @alias or model/<name>)", schema: { type: string, maxLength: 200 } }
+        - { name: stage, in: query, description: Only deployments at this stage, schema: { $ref: "#/components/schemas/DeploymentStage" } }
+        - { name: state, in: query, description: "live (default: active and pending-delivery) or all", schema: { type: string, enum: [live, all], default: live } }
+      responses:
+        "200":
+          description: Deployments, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: deployments.new
+      summary: Deploy a model version's export as a shadow on the staging target, replayed nightly from a calls mount
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Create a shadow deployment: the model version's export (version ver_…, @alias or model/<name>; profile
+          default the primary profile; format default the family's first) on the staging target, with no effect on
+          calls. It needs an exported export the staging target serves (export-missing, target-does-not-serve) and a
+          staging server that is up (serving-unavailable). replay names the calls it replays every night at
+          deploy.shadow_replay_at: a mount, a path under it and the registered source the recordings belong to (no
+          licence, no ingest), optionally their language and channel roles. Each night the newest calls not yet
+          replayed, up to deploy.shadow_replay_max_hours, are decoded by this model and by the comparison model
+          (against; default the project's production deployment's model, else @baseline) through the staging server,
+          and shadow_score@1 records their divergence; a canary needs deploy.shadow_min_hours of replayed calls.
+          Allowed for agents. dryRun=true validates and answers the deployment as it would be created.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentNew" } } }
+      responses:
+        "200":
+          description: Dry run — the deployment as it would be created; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deployment" } } }
+        "201":
+          description: The shadow deployment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deployment" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: deployments.get
+      summary: A deployment with its shadow progress, stage history and pending promotion
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          One deployment: what it serves, where, its stage and state, the shadow progress (hours, calls, nights,
+          divergence with its interval, the comparison model, the last replay), the pending promotion when one waits
+          for its receipt, and the stage history (created, promotion, rollback, confirmation, withdrawal) with the
+          promotion record of each step. shadowReplays.list has the nights.
+      responses:
+        "200":
+          description: The deployment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deployment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}:promote:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    post:
+      operationId: deployments.promote
+      summary: Promote a deployment to canary or production on a delivery target's slot (checks, then an approval, then a signed record and its bundle)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Ask to promote a deployment. canary: from shadow to a delivery target's slot (target dtg_… or name, slot)
+          at trafficShare (default deploy.canary_share); it needs the target to serve the family, format and profile
+          and to run the engine's server version and card class (target-does-not-serve), the export's parity passed
+          (parity-failed), a benchmark of the export passed at the target's concurrency (benchmark-missing,
+          latency-budget-exceeded), the shadow at deploy.shadow_min_hours (shadow-volume-short) and no other canary or
+          pending promotion on the slot (conflict). production: the same model version must be the slot's confirmed
+          canary (canary-required). Promoting to the stage the deployment already holds with a new decoding (boost
+          lists) is a config-only promotion: no new model, the bundle ships the decoding configuration. The checks run
+          first; dryRun=true answers every check without asking anyone. The real call always answers 202 with an
+          approvalId, for people too (rule deployments): a person decides it in the confirm modal. The approval appends
+          a signed promotion record and builds its delivery bundle; the deployment waits in pending-delivery until a
+          person runs deliver.sh on the production host and pastes its receipt (promotions.verify).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentPromote" } } }
+      responses:
+        "200":
+          description: "Dry run — every check with its verdict and what the record would say; or the approved request: the deployment, pending delivery, with its record"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentPromotion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}:rollback:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    post:
+      operationId: deployments.rollback
+      summary: Roll a canary or production deployment back to the slot's earlier production version (approval, signed record, small script)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Ask to roll a canary or production deployment back: its slot returns to the confirmed earlier production
+          version, which stayed loaded on the production host (rollback-unavailable when the slot has none). Same path
+          as a promotion: dryRun=true answers the check and the version restored; the real call answers 202 with an
+          approvalId, for people too; the approval appends a signed rollback record and builds a small delivery
+          script that routes the slot back; promotions.verify confirms it.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentRollback" } } }
+      responses:
+        "200":
+          description: "Dry run — the check and the version restored; or the approved request: the deployment, pending delivery, with its record"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentPromotion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}/shadow-replays:
+    x-cadence: { entity: shadowReplays, kind: shadow_replay }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: shadowReplays.list
+      summary: A shadow deployment's nightly replays, newest first, with the divergence of each night
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          The nights a shadow deployment replayed (srp_…), newest first: state (running, done, failed, skipped with
+          the reason), calls, hours, segments, the divergence between this model and the comparison model (WER of one
+          against the other, with a bootstrap interval resampled by call) and both mean confidences. shadowReplays.get
+          adds the night's most divergent segments.
+      parameters:
+        - { name: limit, in: query, description: "Nights to answer (default 60)", schema: { type: integer, minimum: 1, maximum: 366, default: 60 } }
+      responses:
+        "200":
+          description: Nights, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplayList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: shadowReplays.new
+      summary: Replay the newest unreplayed calls of a shadow deployment now, instead of waiting for the night (GPU spend)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Start a shadow replay now: the newest calls of the deployment's replay mount not yet replayed, up to
+          deploy.shadow_replay_max_hours, decoded by the deployment's export and by the comparison model through the
+          staging server, then shadow_score@1. The nightly replay at deploy.shadow_replay_at does the same by itself;
+          one replay runs at a time per deployment (conflict). dryRun=true answers the calls it would take and the
+          estimate; the real call answers 201 with the replay, or 202 with an approvalId when the GPU spend needs a
+          person.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the replay as it would start (calls, hours, steps, estimate); nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplay" } } }
+        "201":
+          description: The replay, started
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplay" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /shadow-replays/{id}:
+    x-cadence: { entity: shadowReplays, kind: shadow_replay }
+    parameters:
+      - { name: id, in: path, required: true, description: "Shadow replay id (srp_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: shadowReplays.get
+      summary: One night's shadow replay with its most divergent segments (texts kept deploy.shadow_artifact_retention_days)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          One night of a shadow replay with its most divergent segments (up to deploy.shadow_worst_segments): the
+          segment's audio hash and mount window, its call, both transcripts, their confidences and the WER of one
+          against the other. The texts come from production audio: they are kept deploy.shadow_artifact_retention_days
+          (textsEvictedAt once gone; the night's summary stays) and never reach an LLM judge before PII redaction.
+      responses:
+        "200":
+          description: The night
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplay" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
 
 components:
@@ -12013,3 +12230,257 @@ components:
       required: [receipt]
       properties:
         receipt: { type: string, minLength: 1, maxLength: 2000, description: "The CADENCE-RECEIPT line deliver.sh printed (surrounding text is ignored)" }
+    # ---------------------------------------------------------------- deployments, shadow replay schemas (phase 5 · stream D4) — add below
+    DeploymentStage:
+      type: string
+      enum: [shadow, canary, production, retired]
+      description: "shadow: on the staging target, no effect on calls; canary: a traffic share of a delivery target's slot; production: the slot's whole traffic; retired: replaced or rolled back"
+    DeploymentState:
+      type: string
+      enum: [active, pending-delivery, rolled-back, retired]
+      description: "pending-delivery: a promotion or rollback record waits for its receipt (promotions.verify); the stage moves only when it is confirmed"
+    DeploymentReplay:
+      type: object
+      additionalProperties: false
+      required: [mount, source]
+      description: "The call recordings a shadow deployment replays every night (R32 · е: Эра's recordings mount; calls-synth-sr stands in)"
+      properties:
+        mount: { type: string, minLength: 1, maxLength: 100, description: "A registered mount (name or mnt_…)" }
+        path: { type: string, maxLength: 1000, description: "The directory under the mount that holds the calls (default the mount's root)" }
+        source: { type: string, minLength: 2, maxLength: 100, description: "The registered source the recordings belong to (sources.new; no licence, no ingest)" }
+        language: { type: string, maxLength: 35, description: "Language of the calls (BCP 47); default the language the model's gating eval decoded its first target golden set in" }
+        channelRoles: { type: array, maxItems: 8, items: { type: string, enum: [caller, bot, mono] }, description: "Role of each channel when a call has no sidecar (default [caller, bot])" }
+    DeploymentNew:
+      type: object
+      additionalProperties: false
+      required: [version, replay]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name>" }
+        profile: { type: string, minLength: 1, maxLength: 50, description: "The export's latency profile; default the primary profile" }
+        format: { type: string, minLength: 1, maxLength: 100, description: "The export's format; default the family's first" }
+        replay: { $ref: "#/components/schemas/DeploymentReplay" }
+        against: { type: string, minLength: 1, maxLength: 200, description: "The model the shadow is compared with (ver_…, @alias or model/<name>, or a base model version); default the model of the project's production deployment, else @baseline" }
+    DeploymentBoostList:
+      type: object
+      required: [locale, domain, sha256, weight]
+      description: "A static boost list shipped as decoding configuration (03 'Hot words'): the language pack's lang/<locale>/boost/<domain>.txt as {terms, weight}"
+      properties:
+        locale: { type: string }
+        domain: { type: string }
+        hash: { type: string, description: "The boost_list artifact (b3:…)" }
+        sha256: { type: string, description: "SHA-256 of the list's canonical JSON, as the record names it" }
+        weight: { type: number }
+        terms: { type: integer }
+        commit: { type: string, description: "The project repository commit the list was read at" }
+    DeploymentDecoding:
+      type: object
+      required: [boostLists]
+      properties:
+        boostLists: { type: array, items: { $ref: "#/components/schemas/DeploymentBoostList" } }
+    DeploymentShadow:
+      type: object
+      required: [hours, calls, utterances, nights, minHours]
+      description: "Shadow progress: what the nightly replays decoded so far (each call once, by its duration)"
+      properties:
+        hours: { type: number }
+        calls: { type: integer }
+        utterances: { type: integer, description: Segments compared }
+        nights: { type: integer, description: Replays that finished }
+        minHours: { type: number, description: "deploy.shadow_min_hours: what a canary needs" }
+        divergence:
+          type: object
+          description: "WER of this model against the comparison model over every replayed segment, with the bootstrap interval resampled by call (R54), from the newest night that has one"
+          properties:
+            wer: { type: number }
+            ci: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+        against:
+          type: object
+          description: The model the shadow is compared with
+          properties:
+            kind: { type: string, enum: [model, base_model] }
+            versionId: { type: string }
+            label: { type: string }
+            deploymentId: { type: string, description: "The production deployment whose model it is, when it is one" }
+        lastReplayAt: { type: string, format: date-time }
+        nextReplayAt: { type: string, format: date-time, description: "When the next nightly replay starts (deploy.shadow_replay_at in policies.timezone)" }
+    DeploymentPending:
+      type: object
+      required: [recordId, kind, stage, targetId]
+      description: A promotion or rollback that waits for its receipt
+      properties:
+        recordId: { type: string }
+        kind: { type: string, enum: [promotion, rollback] }
+        stage: { $ref: "#/components/schemas/DeploymentStage" }
+        targetId: { type: string }
+        slot: { type: string }
+        trafficShare: { type: number }
+        configOnly: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    DeploymentStep:
+      type: object
+      required: [kind, createdAt]
+      description: "One step of a deployment's history"
+      properties:
+        kind: { type: string, enum: [created, promotion, rollback, confirmation, withdrawal, retired, restored] }
+        fromStage: { $ref: "#/components/schemas/DeploymentStage" }
+        toStage: { $ref: "#/components/schemas/DeploymentStage" }
+        recordId: { type: string, description: "The promotion record of the step (prm_…)" }
+        targetId: { type: string }
+        slot: { type: string }
+        trafficShare: { type: number }
+        decoding: { $ref: "#/components/schemas/DeploymentDecoding" }
+        reason: { type: string }
+        approvalId: { type: string }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+    Deployment:
+      type: object
+      required: [id, projectId, modelVersionId, modelVersion, exportId, profile, format, targetId, targetName, stage, state, decoding, history, rev, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "dep_…" }
+        projectId: { type: string }
+        modelVersionId: { type: string }
+        modelVersion: { type: string, description: "model/<name> <version>" }
+        family: { type: string }
+        exportId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        deployableHash: { type: string }
+        targetId: { type: string, description: "The staging target for a shadow; the delivery target for canary and production" }
+        targetName: { type: string }
+        slot: { type: string }
+        modelName: { type: string, description: "The versioned model name on the delivery target (slot and version), once promoted" }
+        stage: { $ref: "#/components/schemas/DeploymentStage" }
+        state: { $ref: "#/components/schemas/DeploymentState" }
+        trafficShare: { type: number, description: Canary only }
+        decoding: { $ref: "#/components/schemas/DeploymentDecoding" }
+        replay: { $ref: "#/components/schemas/DeploymentReplay" }
+        shadow: { $ref: "#/components/schemas/DeploymentShadow" }
+        pending: { $ref: "#/components/schemas/DeploymentPending" }
+        history: { type: array, items: { $ref: "#/components/schemas/DeploymentStep" }, description: "Oldest first" }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DeploymentList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Deployment" } }
+    DeploymentBoostRequest:
+      type: object
+      additionalProperties: false
+      required: [locale, domain]
+      properties:
+        locale: { type: string, minLength: 2, maxLength: 35, description: "The language pack's locale (lang/<locale>)" }
+        domain: { type: string, minLength: 1, maxLength: 64, description: "The list: lang/<locale>/boost/<domain>.txt" }
+        ref: { type: string, maxLength: 100, description: "The repository commit or branch to read it at (default main)" }
+        weight: { type: number, format: double, minimum: 0, maximum: 100, description: "Overrides the list's own weight" }
+    DeploymentPromote:
+      type: object
+      additionalProperties: false
+      required: [stage, reason]
+      properties:
+        stage: { type: string, enum: [canary, production] }
+        target: { type: string, minLength: 1, maxLength: 100, description: "The delivery target (dtg_… or name); default the deployment's own once it is on one" }
+        slot: { type: string, minLength: 1, maxLength: 100, description: "The target's slot; default the deployment's own once it has one" }
+        trafficShare: { type: number, format: double, minimum: 0.01, maximum: 0.5, description: "Canary only; default deploy.canary_share" }
+        decoding:
+          type: object
+          additionalProperties: false
+          properties:
+            boostLists: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/DeploymentBoostRequest" }, description: "Static boost lists shipped as decoding configuration; absent keeps the deployment's, [] ships none" }
+        reason: { type: string, minLength: 1, maxLength: 2000, description: "Why: it goes into the signed record" }
+    DeploymentRollback:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000, description: "Why: it goes into the signed record" }
+    DeploymentCheck:
+      type: object
+      required: [name, state]
+      properties:
+        name: { type: string, enum: [target-serves, engine, parity, benchmark, shadow, slot-free, canary, rollback, not-pending] }
+        state: { type: string, enum: [passed, failed, skipped, warning] }
+        problemType: { type: string, description: "The problem a failing check answers (its help page: docs/help/errors/<type>.md)" }
+        detail: { type: string }
+    DeploymentPromotion:
+      type: object
+      required: [deploymentId, kind, stage, checks, ready]
+      properties:
+        deploymentId: { type: string }
+        kind: { type: string, enum: [promotion, rollback] }
+        stage: { $ref: "#/components/schemas/DeploymentStage" }
+        targetId: { type: string }
+        targetName: { type: string }
+        slot: { type: string }
+        trafficShare: { type: number }
+        configOnly: { type: boolean, description: "Same deployable as the slot runs: only the decoding configuration changes" }
+        checks: { type: array, items: { $ref: "#/components/schemas/DeploymentCheck" } }
+        ready: { type: boolean, description: "Every check passed (warnings shown, not refused)" }
+        body: { type: object, additionalProperties: true, description: "The record's own fields (stage, model, deployable, decoding, previous, evidence) as it would be signed" }
+        deployment: { $ref: "#/components/schemas/Deployment" }
+        record: { $ref: "#/components/schemas/PromotionRecord" }
+    ShadowSegment:
+      type: object
+      required: [audio, wer]
+      description: "One replayed segment: the caller's speech in a window of a call"
+      properties:
+        audio: { type: string, description: "The segment's audio (b3:…, its canonical 16 kHz WAV): audio.get plays it while the night's texts are kept" }
+        uri: { type: string, description: "The window of the call on the mount (mount://…#t=…&ch=…)" }
+        call: { type: string, description: The call (its mount URI) }
+        start: { type: number }
+        end: { type: number }
+        duration: { type: number }
+        wer: { type: number, description: "WER of this model's transcript against the comparison model's" }
+        errors: { type: integer }
+        words: { type: integer }
+        candidate: { type: string, description: "This deployment's transcript" }
+        current: { type: string, description: "The comparison model's transcript" }
+        candidateConfidence: { type: number }
+        currentConfidence: { type: number }
+    ShadowReplay:
+      type: object
+      required: [id, deploymentId, projectId, night, state, createdAt]
+      properties:
+        id: { type: string, description: "srp_…" }
+        deploymentId: { type: string }
+        projectId: { type: string }
+        night: { type: string, format: date, description: "The night it replayed (policies.timezone)" }
+        trigger: { type: string, enum: [nightly, manual] }
+        state: { type: string, enum: [planned, running, done, failed, skipped] }
+        reason: { type: string, description: "Why it was skipped or failed" }
+        pipelineRunId: { type: string }
+        calls: { type: integer, description: "Calls replayed (planned: selected)" }
+        hours: { type: number }
+        utterances: { type: integer }
+        divergence:
+          type: object
+          properties:
+            wer: { type: number }
+            ci: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+            level: { type: number }
+        confidence:
+          type: object
+          properties:
+            candidate: { type: number }
+            current: { type: number }
+        against:
+          type: object
+          properties:
+            kind: { type: string, enum: [model, base_model] }
+            versionId: { type: string }
+            label: { type: string }
+            decodedBy: { type: string, enum: [serve, transcribe], description: "serve: its export through the staging server; transcribe: the family's own decoder (no export of it at the profile)" }
+        reportHash: { type: string, description: "The shadow_report artifact (cadence.shadow/1)" }
+        worst: { type: array, items: { $ref: "#/components/schemas/ShadowSegment" }, description: "shadowReplays.get only: the most divergent segments" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        textsEvictedAt: { type: string, format: date-time, description: "When the night's texts and audio left the store (deploy.shadow_artifact_retention_days); the summary stays" }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    ShadowReplayList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ShadowReplay" } }

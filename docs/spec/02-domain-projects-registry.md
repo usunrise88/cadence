@@ -499,7 +499,9 @@ model version by weights hash, or the base model version).
 _Specified 2026-10-05, before phase 5 starts (R30, R31, R33, R46; plan `docs/review/2026-10-05-phase-5-plan.md`).
 Spike E1 (`docs/spikes/E1-onnx-triton.md`) replaced A3's first numbers. The shapes below are the working contract:
 each wave-1 stream adds its operations and schemas to `api/openapi.yaml` under its marker, then runs `make gen`. Model
-exports, parity and benchmarks are built (stream D1, migration 0048: `model_exports` and `model_export_checks`)._
+exports, parity and benchmarks are built (stream D1, migration 0048: `model_exports` and `model_export_checks`);
+deployments, their promotion checks and nightly shadow replay are built (stream D4, migration 0051: `deployments`,
+`deployment_steps`, `shadow_replays`, `shadow_calls`, `shadow_segments`; "Deployments as built (stream D4)" below)._
 
 A model version never changes. What phase 5 adds attaches to it, as reference alignments attach to a golden set:
 exports, their parity and benchmark reports, and the deployments and promotions built on them. IDs: model exports
@@ -590,6 +592,54 @@ Checks before an approval is even asked (each a 422 with its help page):
 | `canary` | The target serves the family, format and profile (`target-does-not-serve`); the export's parity passed (`parity-failed`); a benchmark of the export passed at the target's concurrency and profile (`latency-budget-exceeded`, or `benchmark-missing`); the deployment's shadow reached `deploy.shadow_min_hours` (20 h; `shadow-volume-short`); no other canary or pending promotion on the slot (`conflict`) |
 | `production` | The same model version is the slot's confirmed canary (`canary-required`) |
 | rollback | The slot has a confirmed earlier production version still loaded (`rollback-unavailable`) |
+
+**Deployments as built (stream D4, 2026-10-05).** `internal/deployments`; what differs from the tables above:
+
+- `deployments.new` takes `{version, profile?, format?, replay: {mount, path?, source, language?, channelRoles?},
+  against?}`. `replay.source` is required: the registered source the recordings belong to ("no licence, no
+  ingest"; `source-unlicensed`). `language` defaults to the language the model's gating eval decoded its first target
+  golden set in, `channelRoles` to `[caller, bot]` (a call's sidecar wins). `against` is the comparison model
+  (default: the model of the project's production deployment, else `@baseline`, else the project's default base
+  model; never the model itself). One live shadow per export (`conflict`).
+- The deployment row: `stage`, `state`, `targetId`, `slot`, `modelName` (the versioned model name on the delivery
+  target, `<slot>-<version with dashes>`, e.g. `asr-he-il-2026-11-02-ab12cd`), `trafficShare`, `decoding`,
+  `replay`, `shadow` (running totals), `pending` (the record waiting for its receipt) and `history[]` (steps
+  `created`, `promotion`, `rollback`, `confirmation`, `withdrawal`, `retired`, `restored`, each with its record).
+  Shadow totals change no revision, so a promotion approved while a night ran still matches its `If-Match`.
+- `deployments.promote` `{stage, target?, slot?, trafficShare?, decoding?: {boostLists: [{locale, domain, ref?,
+  weight?}]}, reason}`; target and slot default to the deployment's own once it is on a delivery target. Promoting to
+  the stage the deployment already holds on its slot with a new decoding or share is **config-only**: the record names
+  the same deployable, the bundle ships no model (D3's `installed`) and no smoke set, and the receipt reads `0/0`.
+- The checks are those of the table plus **engine**: the export's `serving.server.version` and `serving.engine.
+  cardClass` must equal the target's `server.version` and `cardClass` when both are known (`target-does-not-serve`:
+  the engine does not load on another GPU architecture or server release; a card class missing on either side is a
+  warning). A benchmark measured on another card class than the target's is a warning. A benchmark counts at the
+  target's concurrency only (`streams` equal to it); an `inconclusive` newest one answers `benchmark-missing`.
+  `dryRun=true` answers every check (`checks[]`: `target-serves`, `engine`, `parity`, `benchmark`, `shadow`,
+  `slot-free`, `canary`, `rollback`, `not-pending`, each `passed`, `failed` with its problem type, `warning` or
+  `skipped`) and the record's body; the real call refuses with the first failing check's problem before the policy.
+- The approval is for everyone (preset rule `deployments`, `everyone: true`): a person's own call waits too, and the
+  Model document's confirm modal approves it at once (`approvals.approve`), so the signed record always names an
+  approver. The approved replay appends the record (`promotions.Append`) and queues the bundle (`delivery.Build`) in
+  the deciding transaction; the deployment is `pending-delivery` until `promotions.verify` (`deployments.Confirm`
+  moves it) or the withdrawal (`deployments.Withdraw` returns it).
+- Record bodies: a promotion carries `stage`, `trafficShare` (canary only), `model {versionId, version: model/<name>@<
+  version>, weightsHash, family}`, `deployable {hash, format, profile, modelName, manifestSha256, files}`, `decoding
+  {boostLists: [{locale, domain, sha256, weight}]}`, `previous {versionId, modelName}` (the slot's production) and
+  `evidence {gate, parity, benchmark, shadow}`. A rollback names the restored version's `model` and `deployable`,
+  `stage: production` and `replaces {versionId, modelName}`; its bundle installs nothing (the version stayed loaded).
+- On confirmation: a canary takes the slot at its share; a production retires the slot's earlier production
+  deployment (`retired`, which stays loaded and is what a rollback restores); a rollback leaves the deployment
+  `retired`/`rolled-back` and the restored deployment `production`/`active`. A canary's rollback restores the
+  slot's production deployment (no state change).
+- Boost lists are read from `lang/<locale>/boost/<domain>.txt` at `ref` (default `main`) and stored as `boost_list`
+  artifacts; the bundle's `decoding/<locale>.<domain>.json` files come from the record's step.
+- `transcriptions.Deployments` resolves a deployment for manual tests: its export's deployable through the
+  deployment's staging target while it is a shadow, else through `serving.default_target`.
+- Shadow replays are their own entity (`srp_…`): `shadowReplays.list` (`GET /deployments/{id}/shadow-
+  replays`), `shadowReplays.get` (`GET /shadow-replays/{id}`, with the night's worst segments) and
+  `shadowReplays.new` (`POST /deployments/{id}/shadow-replays`, a replay now; `gpu-spend`). The nightly replay
+  (03 "Shadow replay") runs as the system.
 
 **Promotion records (R33).** A record is JSON in canonical form (RFC 8785, JCS); its hash is the SHA-256 of that
 form (hex); its signature is Ed25519 over the 32 hash bytes. Records are append-only (`promotion_records`; a trigger

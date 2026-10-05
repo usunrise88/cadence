@@ -4468,6 +4468,460 @@
       ]
     },
     {
+      "name": "deployments.get",
+      "title": "A deployment with its shadow progress, stage history and pending promotion",
+      "description": "One deployment: what it serves, where, its stage and state, the shadow progress (hours, calls, nights, divergence with its interval, the comparison model, the last replay), the pending promotion when one waits for its receipt, and the stage history (created, promotion, rollback, confirmation, withdrawal) with the promotion record of each step. shadowReplays.list has the nights.",
+      "method": "GET",
+      "path": "/deployments/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Deployment id (dep_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "deployments.list",
+      "title": "The project's deployments, newest first, with stage, shadow progress and pending promotions",
+      "description": "List the project's deployments (dep_…), newest first: the model version and export they serve, where (the staging target for a shadow, a delivery target's slot for canary and production), the stage (shadow, canary, production, retired) and state (active, pending-delivery while a promotion waits for its receipt, rolled-back, retired), the shadow progress (hours replayed against deploy.shadow_min_hours, nights, divergence from the comparison model with its interval) and the stage history with its promotion records. Filter by model version (ver_…, @alias or model/\u003cname\u003e), stage or state=all (retired and rolled back too).",
+      "method": "GET",
+      "path": "/projects/{p}/deployments",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          },
+          "stage": {
+            "description": "Only deployments at this stage",
+            "enum": [
+              "shadow",
+              "canary",
+              "production",
+              "retired"
+            ],
+            "type": "string"
+          },
+          "state": {
+            "default": "live",
+            "description": "live (default: active and pending-delivery) or all",
+            "enum": [
+              "live",
+              "all"
+            ],
+            "type": "string"
+          },
+          "version": {
+            "description": "Only deployments of this model version (ver_…, @alias or model/\u003cname\u003e)",
+            "maxLength": 200,
+            "type": "string"
+          }
+        },
+        "required": [
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "version",
+          "in": "query",
+          "name": "version"
+        },
+        {
+          "property": "stage",
+          "in": "query",
+          "name": "stage"
+        },
+        {
+          "property": "state",
+          "in": "query",
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "deployments.new",
+      "title": "Deploy a model version's export as a shadow on the staging target, replayed nightly from a calls mount",
+      "description": "Create a shadow deployment: the model version's export (version ver_…, @alias or model/\u003cname\u003e; profile default the primary profile; format default the family's first) on the staging target, with no effect on calls. It needs an exported export the staging target serves (export-missing, target-does-not-serve) and a staging server that is up (serving-unavailable). replay names the calls it replays every night at deploy.shadow_replay_at: a mount, a path under it and the registered source the recordings belong to (no licence, no ingest), optionally their language and channel roles. Each night the newest calls not yet replayed, up to deploy.shadow_replay_max_hours, are decoded by this model and by the comparison model (against; default the project's production deployment's model, else @baseline) through the staging server, and shadow_score@1 records their divergence; a canary needs deploy.shadow_min_hours of replayed calls. Allowed for agents. dryRun=true validates and answers the deployment as it would be created. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/deployments",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "against": {
+                "description": "The model the shadow is compared with (ver_…, @alias or model/\u003cname\u003e, or a base model version); default the model of the project's production deployment, else @baseline",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "format": {
+                "description": "The export's format; default the family's first",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "profile": {
+                "description": "The export's latency profile; default the primary profile",
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              "replay": {
+                "additionalProperties": false,
+                "description": "The call recordings a shadow deployment replays every night (R32 · е: Эра's recordings mount; calls-synth-sr stands in)",
+                "properties": {
+                  "channelRoles": {
+                    "description": "Role of each channel when a call has no sidecar (default [caller, bot])",
+                    "items": {
+                      "enum": [
+                        "caller",
+                        "bot",
+                        "mono"
+                      ],
+                      "type": "string"
+                    },
+                    "maxItems": 8,
+                    "type": "array"
+                  },
+                  "language": {
+                    "description": "Language of the calls (BCP 47); default the language the model's gating eval decoded its first target golden set in",
+                    "maxLength": 35,
+                    "type": "string"
+                  },
+                  "mount": {
+                    "description": "A registered mount (name or mnt_…)",
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "path": {
+                    "description": "The directory under the mount that holds the calls (default the mount's root)",
+                    "maxLength": 1000,
+                    "type": "string"
+                  },
+                  "source": {
+                    "description": "The registered source the recordings belong to (sources.new; no licence, no ingest)",
+                    "maxLength": 100,
+                    "minLength": 2,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "mount",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "version": {
+                "description": "The model version: ver_…, @alias or model/\u003cname\u003e",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "version",
+              "replay"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "deployments.promote",
+      "title": "Promote a deployment to canary or production on a delivery target's slot (checks, then an approval, then a signed record and its bundle)",
+      "description": "Ask to promote a deployment. canary: from shadow to a delivery target's slot (target dtg_… or name, slot) at trafficShare (default deploy.canary_share); it needs the target to serve the family, format and profile and to run the engine's server version and card class (target-does-not-serve), the export's parity passed (parity-failed), a benchmark of the export passed at the target's concurrency (benchmark-missing, latency-budget-exceeded), the shadow at deploy.shadow_min_hours (shadow-volume-short) and no other canary or pending promotion on the slot (conflict). production: the same model version must be the slot's confirmed canary (canary-required). Promoting to the stage the deployment already holds with a new decoding (boost lists) is a config-only promotion: no new model, the bundle ships the decoding configuration. The checks run first; dryRun=true answers every check without asking anyone. The real call always answers 202 with an approvalId, for people too (rule deployments): a person decides it in the confirm modal. The approval appends a signed promotion record and builds its delivery bundle; the deployment waits in pending-delivery until a person runs deliver.sh on the production host and pastes its receipt (promotions.verify). Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/deployments/{id}:promote",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "decoding": {
+                "additionalProperties": false,
+                "properties": {
+                  "boostLists": {
+                    "description": "Static boost lists shipped as decoding configuration; absent keeps the deployment's, [] ships none",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "domain": {
+                          "description": "The list: lang/\u003clocale\u003e/boost/\u003cdomain\u003e.txt",
+                          "maxLength": 64,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "locale": {
+                          "description": "The language pack's locale (lang/\u003clocale\u003e)",
+                          "maxLength": 35,
+                          "minLength": 2,
+                          "type": "string"
+                        },
+                        "ref": {
+                          "description": "The repository commit or branch to read it at (default main)",
+                          "maxLength": 100,
+                          "type": "string"
+                        },
+                        "weight": {
+                          "description": "Overrides the list's own weight",
+                          "format": "double",
+                          "maximum": 100,
+                          "minimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "locale",
+                        "domain"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "reason": {
+                "description": "Why: it goes into the signed record",
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "slot": {
+                "description": "The target's slot; default the deployment's own once it has one",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "stage": {
+                "enum": [
+                  "canary",
+                  "production"
+                ],
+                "type": "string"
+              },
+              "target": {
+                "description": "The delivery target (dtg_… or name); default the deployment's own once it is on one",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "trafficShare": {
+                "description": "Canary only; default deploy.canary_share",
+                "format": "double",
+                "maximum": 0.5,
+                "minimum": 0.01,
+                "type": "number"
+              }
+            },
+            "required": [
+              "stage",
+              "reason"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Deployment id (dep_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "deployments.rollback",
+      "title": "Roll a canary or production deployment back to the slot's earlier production version (approval, signed record, small script)",
+      "description": "Ask to roll a canary or production deployment back: its slot returns to the confirmed earlier production version, which stayed loaded on the production host (rollback-unavailable when the slot has none). Same path as a promotion: dryRun=true answers the check and the version restored; the real call answers 202 with an approvalId, for people too; the approval appends a signed rollback record and builds a small delivery script that routes the slot back; promotions.verify confirms it. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/deployments/{id}:rollback",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "description": "Why: it goes into the signed record",
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "reason"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Deployment id (dep_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "ifMatch": {
+            "description": "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "id",
+          "ifMatch"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "ifMatch",
+          "in": "header",
+          "name": "If-Match"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "drafts.accept",
       "title": "Apply a draft as a new revision of its entity, attributed to the person who accepts it",
       "description": "Accept a draft: its content becomes a new revision of the entity, attributed to the caller, with causedBy naming the draft. Send ifMatch with the draft's etag (rev). A draft whose entity moved on since it was made fails with draft-stale and the entity's current revision. Agents may not accept drafts: a person decides. Pass dryRun=true to see what would happen without changing anything.",
@@ -10922,6 +11376,127 @@
           "property": "body",
           "in": "body",
           "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "shadowReplays.get",
+      "title": "One night's shadow replay with its most divergent segments (texts kept deploy.shadow_artifact_retention_days)",
+      "description": "One night of a shadow replay with its most divergent segments (up to deploy.shadow_worst_segments): the segment's audio hash and mount window, its call, both transcripts, their confidences and the WER of one against the other. The texts come from production audio: they are kept deploy.shadow_artifact_retention_days (textsEvictedAt once gone; the night's summary stays) and never reach an LLM judge before PII redaction.",
+      "method": "GET",
+      "path": "/shadow-replays/{id}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Shadow replay id (srp_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        }
+      ]
+    },
+    {
+      "name": "shadowReplays.list",
+      "title": "A shadow deployment's nightly replays, newest first, with the divergence of each night",
+      "description": "The nights a shadow deployment replayed (srp_…), newest first: state (running, done, failed, skipped with the reason), calls, hours, segments, the divergence between this model and the comparison model (WER of one against the other, with a bootstrap interval resampled by call) and both mean confidences. shadowReplays.get adds the night's most divergent segments.",
+      "method": "GET",
+      "path": "/deployments/{id}/shadow-replays",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "description": "Deployment id (dep_…)",
+            "maxLength": 100,
+            "type": "string"
+          },
+          "limit": {
+            "default": 60,
+            "description": "Nights to answer (default 60)",
+            "maximum": 366,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "limit",
+          "in": "query",
+          "name": "limit"
+        }
+      ]
+    },
+    {
+      "name": "shadowReplays.new",
+      "title": "Replay the newest unreplayed calls of a shadow deployment now, instead of waiting for the night (GPU spend)",
+      "description": "Start a shadow replay now: the newest calls of the deployment's replay mount not yet replayed, up to deploy.shadow_replay_max_hours, decoded by the deployment's export and by the comparison model through the staging server, then shadow_score@1. The nightly replay at deploy.shadow_replay_at does the same by itself; one replay runs at a time per deployment (conflict). dryRun=true answers the calls it would take and the estimate; the real call answers 201 with the replay, or 202 with an approvalId when the GPU spend needs a person. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/deployments/{id}/shadow-replays",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Deployment id (dep_…)",
+            "maxLength": 100,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "id",
+          "in": "path",
+          "name": "id"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
         }
       ]
     },

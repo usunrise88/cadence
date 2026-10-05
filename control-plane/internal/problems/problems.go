@@ -142,6 +142,10 @@ var (
 	ParityFailed          = Type{"parity-failed", http.StatusUnprocessableEntity, "Parity check not passed"}
 	LatencyBudgetExceeded = Type{"latency-budget-exceeded", http.StatusUnprocessableEntity, "Latency budget exceeded"}
 	BenchmarkMissing      = Type{"benchmark-missing", http.StatusUnprocessableEntity, "Benchmark missing"}
+	// Deployments (phase 5 · stream D4): the rest of the promotion checks.
+	ShadowVolumeShort   = Type{"shadow-volume-short", http.StatusUnprocessableEntity, "Shadow volume short"}
+	CanaryRequired      = Type{"canary-required", http.StatusUnprocessableEntity, "Canary required"}
+	RollbackUnavailable = Type{"rollback-unavailable", http.StatusUnprocessableEntity, "Rollback unavailable"}
 )
 
 // Types lists every registered type.
@@ -169,6 +173,7 @@ func Types() []Type {
 		PromotionReceiptMismatch, DeliveryLinkInvalid,
 		ServingUnavailable, ServingOverCap, TargetDoesNotServe,
 		ExportMissing, ParityFailed, LatencyBudgetExceeded, BenchmarkMissing,
+		ShadowVolumeShort, CanaryRequired, RollbackUnavailable,
 	}
 }
 

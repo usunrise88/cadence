@@ -24,7 +24,7 @@ import (
 // AudioFingerprint is the fingerprint kind every import writes: the audio's content hash.
 const AudioFingerprint = "audio-b3"
 
-// FileFingerprint is the fingerprint kind sdp_ingest@2 gives a segment: the content hash of the canonical WAV of the
+// FileFingerprint is the fingerprint kind sdp_ingest (since @2) gives a segment: the content hash of the canonical WAV of the
 // whole track it was cut from — what an import of that file as one utterance hashes. The leakage check matches it
 // against audio-b3 (and file-b3) of other utterances, so a golden set's file re-cut by VAD is still found.
 const FileFingerprint = "file-b3"

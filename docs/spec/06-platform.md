@@ -683,8 +683,9 @@ none (one job serves a session), served by one staging target, at their export's
 boost list (static lists ship with the promotion; the per-call field waits for R32). The job is the family's `serve`
 kind with `mode: relay` and `target`, reserving the served models (`serving.model_memory_gb` each unless the
 deployable states one). The request is refused `serving-unavailable` when the target's last check found it down.
-Deployments are resolved through `transcriptions.Deployments`, which stream D4 implements; until then a
-`deploymentId` answers `not-found`.
+Deployments are resolved through `transcriptions.Deployments`, which `internal/deployments` implements (stream
+D4): a shadow's export through its own staging target, a canary's or production's through `serving.default_target`;
+a retired or rolled-back deployment serves nothing (`conflict`).
 
 **The serve role's client** (`nemotron_serve@1`, E1's design): the client computes the features the pipeline
 decoder would (the export's preprocessor) and sends the same buffers `nemotron_transcribe` decodes, one request per
@@ -698,7 +699,9 @@ pieces and the front end from `streaming_cfg.json` in the deployable's model dir
 a served front end is a later change of the export and the client together.
 
 **Events.** `deploy.{id}` carries the deployment's stage and promotion records. `shadow.{deployment}` carries
-`shadow.replayed` (hours, divergence, the most divergent segments by id) after each night. The staging target's
+`shadow.replayed` (hours, divergence, the most divergent segments by id) after each night; as built (stream D4) also
+`shadow.started`, `shadow.skipped` (the night's reason) and `shadow.failed`, and `shadow.replayed` once more on
+`deploy.{id}` with the deployment's total hours. The staging target's
 health goes on `entity.deployment_target.{id}`.
 
 ## Operations

@@ -49,7 +49,7 @@ type Service struct {
 	Keys     *Keyring
 	Defaults func() *defaults.Defaults
 	Log      *slog.Logger
-	// Stages moves deployments; nil until stream D4 installs internal/deployments (TODO(D4): deployments.Confirm).
+	// Stages moves deployments (internal/deployments, stream D4); nil moves nothing.
 	Stages Stager
 	// Now is the clock (tests); time.Now when nil.
 	Now func() time.Time

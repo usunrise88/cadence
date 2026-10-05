@@ -133,6 +133,8 @@ type Deploy struct {
 	ShadowReplayAt              Param[string]   `yaml:"shadow_replay_at"`
 	ShadowReplayMaxHours        Param[float64]  `yaml:"shadow_replay_max_hours"`
 	ShadowArtifactRetentionDays Param[int]      `yaml:"shadow_artifact_retention_days"`
+	ShadowConcurrency           Param[int]      `yaml:"shadow_concurrency"`
+	ShadowWorstSegments         Param[int]      `yaml:"shadow_worst_segments"`
 	CanaryShare                 Param[float64]  `yaml:"canary_share"`
 	DeliveryPendingDays         Param[int]      `yaml:"delivery_pending_days"`
 	// TritonCUDAPoolMB is the server's CUDA memory pool (stream D2, spike E1): compose passes it to the staging server.

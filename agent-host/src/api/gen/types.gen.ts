@@ -10268,6 +10268,412 @@ export type PromotionVerify = {
     receipt: string;
 };
 
+/**
+ * shadow: on the staging target, no effect on calls; canary: a traffic share of a delivery target's slot; production: the slot's whole traffic; retired: replaced or rolled back
+ */
+export type DeploymentStage = 'shadow' | 'canary' | 'production' | 'retired';
+
+/**
+ * pending-delivery: a promotion or rollback record waits for its receipt (promotions.verify); the stage moves only when it is confirmed
+ */
+export type DeploymentState = 'active' | 'pending-delivery' | 'rolled-back' | 'retired';
+
+/**
+ * The call recordings a shadow deployment replays every night (R32 · е: Эра's recordings mount; calls-synth-sr stands in)
+ */
+export type DeploymentReplay = {
+    /**
+     * A registered mount (name or mnt_…)
+     */
+    mount: string;
+    /**
+     * The directory under the mount that holds the calls (default the mount's root)
+     */
+    path?: string;
+    /**
+     * The registered source the recordings belong to (sources.new; no licence, no ingest)
+     */
+    source: string;
+    /**
+     * Language of the calls (BCP 47); default the language the model's gating eval decoded its first target golden set in
+     */
+    language?: string;
+    /**
+     * Role of each channel when a call has no sidecar (default [caller, bot])
+     */
+    channelRoles?: Array<'caller' | 'bot' | 'mono'>;
+};
+
+export type DeploymentNew = {
+    /**
+     * The model version: ver_…, @alias or model/<name>
+     */
+    version: string;
+    /**
+     * The export's latency profile; default the primary profile
+     */
+    profile?: string;
+    /**
+     * The export's format; default the family's first
+     */
+    format?: string;
+    replay: DeploymentReplay;
+    /**
+     * The model the shadow is compared with (ver_…, @alias or model/<name>, or a base model version); default the model of the project's production deployment, else @baseline
+     */
+    against?: string;
+};
+
+/**
+ * A static boost list shipped as decoding configuration (03 'Hot words'): the language pack's lang/<locale>/boost/<domain>.txt as {terms, weight}
+ */
+export type DeploymentBoostList = {
+    locale: string;
+    domain: string;
+    /**
+     * The boost_list artifact (b3:…)
+     */
+    hash?: string;
+    /**
+     * SHA-256 of the list's canonical JSON, as the record names it
+     */
+    sha256: string;
+    weight: number;
+    terms?: number;
+    /**
+     * The project repository commit the list was read at
+     */
+    commit?: string;
+};
+
+export type DeploymentDecoding = {
+    boostLists: Array<DeploymentBoostList>;
+};
+
+/**
+ * Shadow progress: what the nightly replays decoded so far (each call once, by its duration)
+ */
+export type DeploymentShadow = {
+    hours: number;
+    calls: number;
+    /**
+     * Segments compared
+     */
+    utterances: number;
+    /**
+     * Replays that finished
+     */
+    nights: number;
+    /**
+     * deploy.shadow_min_hours: what a canary needs
+     */
+    minHours: number;
+    /**
+     * WER of this model against the comparison model over every replayed segment, with the bootstrap interval resampled by call (R54), from the newest night that has one
+     */
+    divergence?: {
+        wer?: number;
+        ci?: [
+            number,
+            number
+        ];
+    };
+    /**
+     * The model the shadow is compared with
+     */
+    against?: {
+        kind?: 'model' | 'base_model';
+        versionId?: string;
+        label?: string;
+        /**
+         * The production deployment whose model it is, when it is one
+         */
+        deploymentId?: string;
+    };
+    lastReplayAt?: string;
+    /**
+     * When the next nightly replay starts (deploy.shadow_replay_at in policies.timezone)
+     */
+    nextReplayAt?: string;
+};
+
+/**
+ * A promotion or rollback that waits for its receipt
+ */
+export type DeploymentPending = {
+    recordId: string;
+    kind: 'promotion' | 'rollback';
+    stage: DeploymentStage;
+    targetId: string;
+    slot?: string;
+    trafficShare?: number;
+    configOnly?: boolean;
+    createdAt?: string;
+};
+
+/**
+ * One step of a deployment's history
+ */
+export type DeploymentStep = {
+    kind: 'created' | 'promotion' | 'rollback' | 'confirmation' | 'withdrawal' | 'retired' | 'restored';
+    fromStage?: DeploymentStage;
+    toStage?: DeploymentStage;
+    /**
+     * The promotion record of the step (prm_…)
+     */
+    recordId?: string;
+    targetId?: string;
+    slot?: string;
+    trafficShare?: number;
+    decoding?: DeploymentDecoding;
+    reason?: string;
+    approvalId?: string;
+    actor?: Actor;
+    createdAt: string;
+};
+
+export type Deployment = {
+    /**
+     * dep_…
+     */
+    id: string;
+    projectId: string;
+    modelVersionId: string;
+    /**
+     * model/<name> <version>
+     */
+    modelVersion: string;
+    family?: string;
+    exportId: string;
+    profile: string;
+    format: string;
+    deployableHash?: string;
+    /**
+     * The staging target for a shadow; the delivery target for canary and production
+     */
+    targetId: string;
+    targetName: string;
+    slot?: string;
+    /**
+     * The versioned model name on the delivery target (slot and version), once promoted
+     */
+    modelName?: string;
+    stage: DeploymentStage;
+    state: DeploymentState;
+    /**
+     * Canary only
+     */
+    trafficShare?: number;
+    decoding: DeploymentDecoding;
+    replay?: DeploymentReplay;
+    shadow?: DeploymentShadow;
+    pending?: DeploymentPending;
+    /**
+     * Oldest first
+     */
+    history: Array<DeploymentStep>;
+    rev: number;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type DeploymentList = {
+    items: Array<Deployment>;
+};
+
+export type DeploymentBoostRequest = {
+    /**
+     * The language pack's locale (lang/<locale>)
+     */
+    locale: string;
+    /**
+     * The list: lang/<locale>/boost/<domain>.txt
+     */
+    domain: string;
+    /**
+     * The repository commit or branch to read it at (default main)
+     */
+    ref?: string;
+    /**
+     * Overrides the list's own weight
+     */
+    weight?: number;
+};
+
+export type DeploymentPromote = {
+    stage: 'canary' | 'production';
+    /**
+     * The delivery target (dtg_… or name); default the deployment's own once it is on one
+     */
+    target?: string;
+    /**
+     * The target's slot; default the deployment's own once it has one
+     */
+    slot?: string;
+    /**
+     * Canary only; default deploy.canary_share
+     */
+    trafficShare?: number;
+    decoding?: {
+        /**
+         * Static boost lists shipped as decoding configuration; absent keeps the deployment's, [] ships none
+         */
+        boostLists?: Array<DeploymentBoostRequest>;
+    };
+    /**
+     * Why: it goes into the signed record
+     */
+    reason: string;
+};
+
+export type DeploymentRollback = {
+    /**
+     * Why: it goes into the signed record
+     */
+    reason: string;
+};
+
+export type DeploymentCheck = {
+    name: 'target-serves' | 'engine' | 'parity' | 'benchmark' | 'shadow' | 'slot-free' | 'canary' | 'rollback' | 'not-pending';
+    state: 'passed' | 'failed' | 'skipped' | 'warning';
+    /**
+     * The problem a failing check answers (its help page: docs/help/errors/<type>.md)
+     */
+    problemType?: string;
+    detail?: string;
+};
+
+export type DeploymentPromotion = {
+    deploymentId: string;
+    kind: 'promotion' | 'rollback';
+    stage: DeploymentStage;
+    targetId?: string;
+    targetName?: string;
+    slot?: string;
+    trafficShare?: number;
+    /**
+     * Same deployable as the slot runs: only the decoding configuration changes
+     */
+    configOnly?: boolean;
+    checks: Array<DeploymentCheck>;
+    /**
+     * Every check passed (warnings shown, not refused)
+     */
+    ready: boolean;
+    /**
+     * The record's own fields (stage, model, deployable, decoding, previous, evidence) as it would be signed
+     */
+    body?: {
+        [key: string]: unknown;
+    };
+    deployment?: Deployment;
+    record?: PromotionRecord;
+};
+
+/**
+ * One replayed segment: the caller's speech in a window of a call
+ */
+export type ShadowSegment = {
+    /**
+     * The segment's audio (b3:…, its canonical 16 kHz WAV): audio.get plays it while the night's texts are kept
+     */
+    audio: string;
+    /**
+     * The window of the call on the mount (mount://…#t=…&ch=…)
+     */
+    uri?: string;
+    /**
+     * The call (its mount URI)
+     */
+    call?: string;
+    start?: number;
+    end?: number;
+    duration?: number;
+    /**
+     * WER of this model's transcript against the comparison model's
+     */
+    wer: number;
+    errors?: number;
+    words?: number;
+    /**
+     * This deployment's transcript
+     */
+    candidate?: string;
+    /**
+     * The comparison model's transcript
+     */
+    current?: string;
+    candidateConfidence?: number;
+    currentConfidence?: number;
+};
+
+export type ShadowReplay = {
+    /**
+     * srp_…
+     */
+    id: string;
+    deploymentId: string;
+    projectId: string;
+    /**
+     * The night it replayed (policies.timezone)
+     */
+    night: string;
+    trigger?: 'nightly' | 'manual';
+    state: 'planned' | 'running' | 'done' | 'failed' | 'skipped';
+    /**
+     * Why it was skipped or failed
+     */
+    reason?: string;
+    pipelineRunId?: string;
+    /**
+     * Calls replayed (planned: selected)
+     */
+    calls?: number;
+    hours?: number;
+    utterances?: number;
+    divergence?: {
+        wer?: number;
+        ci?: [
+            number,
+            number
+        ];
+        level?: number;
+    };
+    confidence?: {
+        candidate?: number;
+        current?: number;
+    };
+    against?: {
+        kind?: 'model' | 'base_model';
+        versionId?: string;
+        label?: string;
+        /**
+         * serve: its export through the staging server; transcribe: the family's own decoder (no export of it at the profile)
+         */
+        decodedBy?: 'serve' | 'transcribe';
+    };
+    /**
+     * The shadow_report artifact (cadence.shadow/1)
+     */
+    reportHash?: string;
+    /**
+     * shadowReplays.get only: the most divergent segments
+     */
+    worst?: Array<ShadowSegment>;
+    estimate?: PipelineEstimate;
+    /**
+     * When the night's texts and audio left the store (deploy.shadow_artifact_retention_days); the summary stays
+     */
+    textsEvictedAt?: string;
+    createdAt: string;
+    finishedAt?: string;
+};
+
+export type ShadowReplayList = {
+    items: Array<ShadowReplay>;
+};
+
 export type SecretNewWritable = {
     name: SecretName;
     kind: SecretKind;
@@ -19566,3 +19972,337 @@ export type DeliveryGetResponses = {
 };
 
 export type DeliveryGetResponse = DeliveryGetResponses[keyof DeliveryGetResponses];
+
+export type DeploymentsListData = {
+    body?: never;
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Only deployments of this model version (ver_…, @alias or model/<name>)
+         */
+        version?: string;
+        /**
+         * Only deployments at this stage
+         */
+        stage?: DeploymentStage;
+        /**
+         * live (default: active and pending-delivery) or all
+         */
+        state?: 'live' | 'all';
+    };
+    url: '/projects/{p}/deployments';
+};
+
+export type DeploymentsListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DeploymentsListError = DeploymentsListErrors[keyof DeploymentsListErrors];
+
+export type DeploymentsListResponses = {
+    /**
+     * Deployments, newest first
+     */
+    200: DeploymentList;
+};
+
+export type DeploymentsListResponse = DeploymentsListResponses[keyof DeploymentsListResponses];
+
+export type DeploymentsNewData = {
+    body: DeploymentNew;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/deployments';
+};
+
+export type DeploymentsNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DeploymentsNewError = DeploymentsNewErrors[keyof DeploymentsNewErrors];
+
+export type DeploymentsNewResponses = {
+    /**
+     * Dry run — the deployment as it would be created; nothing changed
+     */
+    200: Deployment;
+    /**
+     * The shadow deployment
+     */
+    201: Deployment;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type DeploymentsNewResponse = DeploymentsNewResponses[keyof DeploymentsNewResponses];
+
+export type DeploymentsGetData = {
+    body?: never;
+    path: {
+        /**
+         * Deployment id (dep_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/deployments/{id}';
+};
+
+export type DeploymentsGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DeploymentsGetError = DeploymentsGetErrors[keyof DeploymentsGetErrors];
+
+export type DeploymentsGetResponses = {
+    /**
+     * The deployment
+     */
+    200: Deployment;
+};
+
+export type DeploymentsGetResponse = DeploymentsGetResponses[keyof DeploymentsGetResponses];
+
+export type DeploymentsPromoteData = {
+    body: DeploymentPromote;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Deployment id (dep_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/deployments/{id}:promote';
+};
+
+export type DeploymentsPromoteErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DeploymentsPromoteError = DeploymentsPromoteErrors[keyof DeploymentsPromoteErrors];
+
+export type DeploymentsPromoteResponses = {
+    /**
+     * Dry run — every check with its verdict and what the record would say; or the approved request: the deployment, pending delivery, with its record
+     */
+    200: DeploymentPromotion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type DeploymentsPromoteResponse = DeploymentsPromoteResponses[keyof DeploymentsPromoteResponses];
+
+export type DeploymentsRollbackData = {
+    body: DeploymentRollback;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+        /**
+         * The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev
+         */
+        'If-Match': string;
+    };
+    path: {
+        /**
+         * Deployment id (dep_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/deployments/{id}:rollback';
+};
+
+export type DeploymentsRollbackErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type DeploymentsRollbackError = DeploymentsRollbackErrors[keyof DeploymentsRollbackErrors];
+
+export type DeploymentsRollbackResponses = {
+    /**
+     * Dry run — the check and the version restored; or the approved request: the deployment, pending delivery, with its record
+     */
+    200: DeploymentPromotion;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type DeploymentsRollbackResponse = DeploymentsRollbackResponses[keyof DeploymentsRollbackResponses];
+
+export type ShadowReplaysListData = {
+    body?: never;
+    path: {
+        /**
+         * Deployment id (dep_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Nights to answer (default 60)
+         */
+        limit?: number;
+    };
+    url: '/deployments/{id}/shadow-replays';
+};
+
+export type ShadowReplaysListErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ShadowReplaysListError = ShadowReplaysListErrors[keyof ShadowReplaysListErrors];
+
+export type ShadowReplaysListResponses = {
+    /**
+     * Nights, newest first
+     */
+    200: ShadowReplayList;
+};
+
+export type ShadowReplaysListResponse = ShadowReplaysListResponses[keyof ShadowReplaysListResponses];
+
+export type ShadowReplaysNewData = {
+    body?: never;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Deployment id (dep_…)
+         */
+        id: string;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/deployments/{id}/shadow-replays';
+};
+
+export type ShadowReplaysNewErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ShadowReplaysNewError = ShadowReplaysNewErrors[keyof ShadowReplaysNewErrors];
+
+export type ShadowReplaysNewResponses = {
+    /**
+     * Dry run — the replay as it would start (calls, hours, steps, estimate); nothing started
+     */
+    200: ShadowReplay;
+    /**
+     * The replay, started
+     */
+    201: ShadowReplay;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ShadowReplaysNewResponse = ShadowReplaysNewResponses[keyof ShadowReplaysNewResponses];
+
+export type ShadowReplaysGetData = {
+    body?: never;
+    path: {
+        /**
+         * Shadow replay id (srp_…)
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/shadow-replays/{id}';
+};
+
+export type ShadowReplaysGetErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ShadowReplaysGetError = ShadowReplaysGetErrors[keyof ShadowReplaysGetErrors];
+
+export type ShadowReplaysGetResponses = {
+    /**
+     * The night
+     */
+    200: ShadowReplay;
+};
+
+export type ShadowReplaysGetResponse = ShadowReplaysGetResponses[keyof ShadowReplaysGetResponses];

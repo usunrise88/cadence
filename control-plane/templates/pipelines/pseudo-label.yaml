@@ -28,7 +28,7 @@ description: Pseudo-label untranscribed audio on a mount (model ensemble + LID) 
 inputs: { normalizer: normalizer }
 steps:
   - id: index
-    kind: sdp_ingest@2
+    kind: sdp_ingest@3
     params:
       source: my-corpus                                # set me: a registered source
       path: mount://corpora/my-corpus/set-me-revision  # set me: <mount>/<source>/<revision>
