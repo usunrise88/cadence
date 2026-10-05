@@ -1,0 +1,25 @@
+# The serving fixture (packs/nemo/scripts/make_serving_fixture.py): E1's stream protocol, no model.
+name: "fixture_step"
+backend: "onnxruntime"
+max_batch_size: 64
+sequence_batching {
+  max_sequence_idle_microseconds: 60000000
+  oldest { max_candidate_sequences: 1024 max_queue_delay_microseconds: 1000 }
+  control_input [
+    { name: "start" control [ { kind: CONTROL_SEQUENCE_START int32_false_true: [ 0, 1 ] } ] }
+  ]
+  state [
+    { input_name: "count_in" output_name: "count_out" data_type: TYPE_FP32 dims: [ 1 ]
+      initial_state: { data_type: TYPE_FP32 dims: [ 1 ] zero_data: true name: "zero_count_in" } }
+  ]
+}
+input [
+  { name: "audio_signal" data_type: TYPE_FP32 dims: [ 8, 17 ] },
+  { name: "length" data_type: TYPE_INT64 dims: [ 1 ] },
+  { name: "prompt" data_type: TYPE_INT64 dims: [ 1 ] }
+]
+output [
+  { name: "tokens" data_type: TYPE_INT32 dims: [ 2 ] },
+  { name: "encoded_len" data_type: TYPE_INT64 dims: [ 1 ] }
+]
+instance_group [ { count: 1 kind: KIND_CPU } ]

@@ -82,6 +82,9 @@ FAMILY = Family(
             "transcribe": "nemotron_transcribe",
             "materialize": "checkpoint_from_base",
             "live": "nemotron_live",
+            # Streams to a deployable on a staging server (phase 5, 06 "Staging serving"): batch for parity,
+            # benchmarks and shadow replay; relay for a transcription session whose targets are deployments.
+            "serve": "nemotron_serve",
         },
         # A live session's card memory (R49, spike A5 finding 6): one model loaded is 3.7 GB steady with a 5.6 GB
         # load peak (the state dict and the model on the card together), plus margin; every further distinct model

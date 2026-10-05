@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from cadence_worker.steps.context import StepContext
 
 X_CADENCE_KEYS = ("default", "description", "source", "range")
-ROLES = ("calibrate", "train", "average", "transcribe", "export", "parity", "materialize", "live")
+ROLES = ("calibrate", "train", "average", "transcribe", "export", "parity", "materialize", "live", "serve")
 
 
 class StepInputError(Exception):
@@ -51,6 +51,21 @@ class StepInputError(Exception):
 class AuxiliaryUnavailable(Exception):  # noqa: N818 (named after its help article, errors/auxiliary-unavailable)
     """A service an auxiliary model names does not answer (its health call failed). Reported as error type ``step``,
     retryable, with the message prefixed ``auxiliary-unavailable:`` (the help article); Cadence never starts it."""
+
+
+class ServingUnavailable(Exception):  # noqa: N818 (named after its help article, errors/serving-unavailable)
+    """The staging target's server does not answer, or a model did not load in time (06 "Staging serving"). Reported
+    as error type ``step``, retryable, prefixed ``serving-unavailable:``; Cadence never starts the server."""
+
+
+class ServingOverCap(Exception):  # noqa: N818 (named after its help article, errors/serving-over-cap)
+    """A served model took more card memory than its reservation; the step unloaded it. Error type ``step``, not
+    retryable, prefixed ``serving-over-cap:``."""
+
+
+class TargetDoesNotServe(StepInputError):  # noqa: N818 (named after its help article, errors/target-does-not-serve)
+    """The lease's target may not serve the deployable (a delivery or archived target, another family, format or
+    profile). Error type ``input``, prefixed ``target-does-not-serve:``."""
 
 
 def cadence_field(

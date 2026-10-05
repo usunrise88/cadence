@@ -25,7 +25,7 @@ COPY worker/runtime/nemo-speech.json /etc/cadence/runtime.json
 RUN chmod o+x /root && chmod -R o+rX /workspace \
  && groupadd --gid 65532 nonroot \
  && useradd --uid 65532 --gid 65532 --no-create-home --home-dir /var/lib/cadence --shell /usr/sbin/nologin nonroot \
- && mkdir -p /var/lib/cadence/cas /var/lib/cadence/scratch /worker-credential \
+ && mkdir -p /var/lib/cadence/cas /var/lib/cadence/scratch /var/lib/cadence/serving /worker-credential \
  && chown -R 65532:65532 /var/lib/cadence /worker-credential
 
 ARG CADENCE_VERSION=dev
@@ -34,6 +34,7 @@ ENV CADENCE_VERSION=${CADENCE_VERSION} \
     CADENCE_RUNTIME_FILE=/etc/cadence/runtime.json \
     CADENCE_CAS_DIR=/var/lib/cadence/cas \
     CADENCE_WORKER_SCRATCH=/var/lib/cadence/scratch \
+    CADENCE_SERVING_DIR=/var/lib/cadence/serving \
     HOME=/var/lib/cadence \
     HF_HOME=/var/lib/cadence/hf
 USER 65532:65532

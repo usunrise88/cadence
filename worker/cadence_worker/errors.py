@@ -6,7 +6,13 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from cadence_worker.protocol_gen import StepError
-from cadence_worker.steps.base import AuxiliaryUnavailable, StepInputError
+from cadence_worker.steps.base import (
+    AuxiliaryUnavailable,
+    ServingOverCap,
+    ServingUnavailable,
+    StepInputError,
+    TargetDoesNotServe,
+)
 
 OOM_MARKERS = ("CUDA out of memory", "CUDA error: out of memory", "CUBLAS_STATUS_ALLOC_FAILED")
 
@@ -32,6 +38,12 @@ def classify(exc: BaseException) -> StepError:
         return {"type": "oom", "message": msg, "retryable": True}
     if isinstance(exc, AuxiliaryUnavailable):
         return {"type": "step", "message": f"auxiliary-unavailable: {exc}"[:4000], "retryable": True}
+    if isinstance(exc, ServingUnavailable):
+        return {"type": "step", "message": f"serving-unavailable: {exc}"[:4000], "retryable": True}
+    if isinstance(exc, ServingOverCap):
+        return {"type": "step", "message": f"serving-over-cap: {exc}"[:4000], "retryable": False}
+    if isinstance(exc, TargetDoesNotServe):
+        return {"type": "input", "message": f"target-does-not-serve: {exc}"[:4000], "retryable": False}
     if isinstance(exc, StepInputError | ValidationError):
         return {"type": "input", "message": msg, "retryable": False}
     return {"type": "step", "message": msg, "retryable": False}
