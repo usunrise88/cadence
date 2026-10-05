@@ -8,7 +8,8 @@ serve → parity → benchmark seam honest in CI; the family's real serve kinds 
 Parameters are the serve role's: ``target`` (recorded), ``profile``, ``concurrency``, ``pace`` (``fast``: a chunk is
 sent when the stream's previous result is back; ``realtime``: when its audio is complete), ``seconds`` (each stream
 loops over its share of the dataset until the level has streamed this long; 0: every utterance once) and
-``warmup_seconds`` (the start of the level not counted). Help: docs/help/steps/toy-serve.md.
+``warmup_seconds`` (with ``seconds`` > 0: streamed first and not counted, so a level lasts warm-up + ``seconds``, as
+``nemotron_serve``'s). Help: docs/help/steps/toy-serve.md.
 """
 
 from __future__ import annotations
@@ -64,7 +65,8 @@ class ServeParams(BaseModel):
     )
     warmup_seconds: float = cadence_field(
         0.0,
-        description="The start of the level that is not counted",
+        description="With seconds > 0: streamed first and not counted (the level lasts warm-up + seconds); a single "
+        "pass counts everything",
         source="Cadence recommendation (a generated benchmark passes deploy.benchmark_warmup_seconds)",
         range={"min": 0, "max": 120},
     )
@@ -144,7 +146,7 @@ class ServeStep:
             "concurrency": p.concurrency,
             "pace": p.pace,
             "seconds": p.seconds,
-            "warmupMs": p.warmup_seconds * 1000,
+            "warmupMs": warmup_ms(p),
             "target": p.target,
             "server": {"kind": "toy", "version": "1"},
             "cardClass": "cpu",
@@ -165,12 +167,17 @@ class ServeStep:
         ctx.progress(1.0, f"served {len(utts)} utterances at {p.concurrency} stream(s), {p.pace}")
 
 
+def warmup_ms(p: ServeParams) -> float:
+    """The uncounted start of a time-boxed level (none for a single pass)."""
+    return p.warmup_seconds * 1000 if p.seconds > 0 else 0.0
+
+
 def simulate(utts: list[str], decoded: Mapping[str, list[tuple[float, float]]], p: ServeParams) -> list[dict[str, Any]]:
     """The chunk rows of S streams sharing one simulated server: stream s plays utterances s, s+S, … (looping while
     ``seconds`` lasts); a chunk is ready at its audio time (realtime) or when the stream's previous result is back
     (fast), the server takes ready chunks in order, one at a time, each for its measured compute."""
     streams = p.concurrency
-    horizon = p.seconds * 1000
+    horizon = p.seconds * 1000 + warmup_ms(p) if p.seconds > 0 else 0.0
     queue: list[tuple[float, int, int, int, int]] = []  # (ready ms, stream, sequence, utterance index, chunk)
     # Per stream: utterance index in its share, the clip's start time.
     share = [[i for i in range(len(utts)) if i % streams == s] or [s % len(utts)] for s in range(streams)]

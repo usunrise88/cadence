@@ -35,6 +35,7 @@ import re
 import secrets
 import shutil
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -156,7 +157,7 @@ class Geometry:
             n_fft = int(pre.get("n_fft") or 512)
             vout = d.get("valid_out_len", 1)
             slots = int(vout if isinstance(vout, int) else two(vout)[1]) * int(d.get("max_symbols", 10))
-            return cls(
+            geo = cls(
                 chunk_frames=two(d["chunk_size"]),
                 pre_encode=two(d["pre_encode_cache_size"]),
                 buffer_frames=int(d["buffer_frames"]),
@@ -172,6 +173,9 @@ class Geometry:
             )
         except (KeyError, TypeError, ValueError) as e:
             raise StepInputError(f"streaming_cfg.json lacks or mistypes {e}: re-export the model") from e
+        if not geo.vocabulary:
+            raise StepInputError("streaming_cfg.json has no vocabulary (the tokenizer's pieces): re-export the model")
+        return geo
 
     def prompt(self, language: str) -> tuple[str, int]:
         key = lang.resolve_prompt_key(language, self.prompts)
@@ -190,6 +194,7 @@ class Deployable:
     model_dir: Path
     memory_mb: int | None
     geometry: Geometry
+    card_class: str = ""  # the card class the engine was built for (serving.engine.cardClass)
 
 
 def read_deployable(path: Path) -> Deployable:
@@ -214,6 +219,7 @@ def read_deployable(path: Path) -> Deployable:
         raise StepInputError("the deployable's model directory has no streaming_cfg.json")
     geo = Geometry.from_cfg(json.loads(cfg_path.read_text(encoding="utf-8")))
     mem = serving.get("memoryMb")
+    engine = serving.get("engine")
     return Deployable(
         root=path,
         format=str(doc.get("format", "")),
@@ -223,6 +229,7 @@ def read_deployable(path: Path) -> Deployable:
         model_dir=model_dir,
         memory_mb=int(mem) if mem else None,
         geometry=geo,
+        card_class=str(engine.get("cardClass") or "") if isinstance(engine, dict) else "",
     )
 
 
@@ -646,31 +653,69 @@ def utterance_chunks(geo: Geometry, make: Callable[[], Featurizer], audio: Audio
 # ---------------------------------------------------------------- text and endpointing
 
 
+# Punctuation that closes what comes before it (other, closing, final quote): NeMo's text processor removes the space
+# before it (``\s+(<punct>)`` → ``\1``), and a final that starts with it continues the previous one's last word.
+TRAILING_PUNCT = ("Po", "Pe", "Pf")
+
+
+def trailing_punct(text: str) -> bool:
+    return bool(text) and unicodedata.category(text[0]) in TRAILING_PUNCT
+
+
+def tighten(text: str) -> str:
+    """No space before closing punctuation (``primjer .`` → ``primjer.``), as NeMo's streaming text processor writes."""
+    out: list[str] = []
+    for word in text.split():
+        if out and trailing_punct(word):
+            out[-1] += word
+        else:
+            out.append(word)
+    return " ".join(out)
+
+
 def detokenize(ids: Sequence[int], vocabulary: Sequence[str]) -> str:
-    """SentencePiece pieces joined, ▁ as a space, the locale tag stripped."""
+    """SentencePiece pieces joined, ▁ as a space, the locale tag stripped, no space before closing punctuation."""
     pieces = [vocabulary[i] for i in ids if 0 <= i < len(vocabulary)]
-    return lang.strip_tags("".join(pieces).replace("▁", " "))
+    return tighten(lang.strip_tags("".join(pieces).replace("▁", " ")))
 
 
 def words_of(ids: Sequence[int], times: Sequence[tuple[float, float]], vocabulary: Sequence[str]) -> list[Event]:
-    """Words with the audio time of the chunks that emitted their tokens (start of the first, end of the last)."""
+    """Words with the audio time of the chunks that emitted their tokens (start of the first, end of the last). A ``▁``
+    starts a word even as a piece of its own (``▁`` ``je`` after ``bio`` is a word); closing punctuation joins the
+    word before it."""
     words: list[Event] = []
+    boundary = True
     for tok, (t0, t1) in zip(ids, times, strict=True):
         piece = vocabulary[tok] if 0 <= tok < len(vocabulary) else ""
-        if not piece:
+        if piece.startswith("▁"):
+            boundary = True
+        text = piece.replace("▁", " ").strip()
+        if not text:
             continue
-        text = piece.replace("▁", " ")
-        if (piece.startswith("▁") or not words) and text.strip():
-            words.append({"word": text.strip(), "start": round(t0, 3), "end": round(t1, 3)})
-        elif words:
-            words[-1]["word"] += text.strip()
+        if words and (not boundary or trailing_punct(text)):
+            words[-1]["word"] += text
             words[-1]["end"] = round(t1, 3)
+        else:
+            words.append({"word": text, "start": round(t0, 3), "end": round(t1, 3)})
+        boundary = False
     out = []
     for w in words:
         t = lang.strip_tags(str(w["word"]))
         if t:
             w["word"] = t
             out.append(w)
+    return out
+
+
+def join_words(words: Sequence[Event]) -> list[Event]:
+    """The words of consecutive finals: a final that starts with closing punctuation continues the word before."""
+    out: list[Event] = []
+    for w in words:
+        if out and trailing_punct(str(w.get("word") or "")):
+            prev = out[-1]
+            out[-1] = {**prev, "word": str(prev["word"]) + str(w["word"]), "end": w.get("end", prev.get("end"))}
+        else:
+            out.append(dict(w))
     return out
 
 
@@ -731,15 +776,17 @@ class ServedStream:
             self.tokens += ids
             self.last_token_at = self.consumed
             self.seq += 1
+            text = detokenize(self.seg_ids, self.geo.vocabulary)
             ev.append(
                 {
                     "type": "partial",
                     "target": self.target,
                     "segment": self.segment,
                     "seq": self.seq,
-                    "text": detokenize(self.seg_ids, self.geo.vocabulary),
+                    "text": text,
                     "audioEnd": round(self.consumed / SR, 3),
-                    "space": True,
+                    # A segment that starts with closing punctuation continues the previous one's last word.
+                    "space": not trailing_punct(text),
                 }
             )
         elif self.seg_ids and (self.consumed - self.last_token_at) * 1000 >= self.eou_ms * SR:
@@ -749,16 +796,17 @@ class ServedStream:
     def final(self, reason: str) -> Event:
         """Close the current segment with its final (endpoint ``reason``); the server sequence runs on."""
         self.seq += 1
+        text = detokenize(self.seg_ids, self.geo.vocabulary)
         ev: Event = {
             "type": "final",
             "target": self.target,
             "segment": self.segment,
             "seq": self.seq,
-            "text": detokenize(self.seg_ids, self.geo.vocabulary),
+            "text": text,
             "words": words_of(self.seg_ids, self.seg_times, self.geo.vocabulary),
             "endpoint": reason,
             "audioEnd": round(self.consumed / SR, 3),
-            "space": True,
+            "space": not trailing_punct(text),
         }
         self.segment += 1
         self.seg_ids, self.seg_times = [], []
@@ -788,4 +836,11 @@ class ServedStream:
 
 
 def join_text(finals: Sequence[Event]) -> str:
-    return " ".join(str(f.get("text") or "") for f in finals if f.get("text")).strip()
+    """The transcript of a stream's finals; one that starts with closing punctuation continues the previous final."""
+    out = ""
+    for f in finals:
+        t = str(f.get("text") or "").strip()
+        if not t:
+            continue
+        out += ("" if not out or trailing_punct(t) else " ") + t
+    return out
