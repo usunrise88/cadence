@@ -166,7 +166,7 @@ def member_line(x: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(x.get("confidence"), int | float):
         line["confidence"] = float(x["confidence"])
     # The whole source track's canonical hash: the leakage check matches it against every golden utterance's audio, so
-    # a golden set's file re-cut by VAD on a mount is still found (sdp_ingest@2).
+    # a golden set's file re-cut by VAD on a mount is still found (sdp_ingest since @2).
     whole = x.get(seg.FILE_FINGERPRINT)
     if isinstance(whole, str) and valid_hash(whole):
         line["fingerprints"] = {seg.FILE_FINGERPRINT: whole}

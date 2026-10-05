@@ -2,8 +2,8 @@
 
 Eight time-boxed experiments that gate phase 0 (shell) and phase 1 (agent loop). Run S1 and A1 first;
 they hold the two biggest unknowns. Three more gate later work (R40–R54): A5 and S5 before phase 3's live
-transcription and audio view; F1 before any framework pack beyond NeMo (deferred). Each brief ends with a Result section to fill
-in.
+transcription and audio view; F1 before any framework pack beyond NeMo (deferred). E1 prepares phase 5's export,
+parity and Triton serving. Each brief ends with a Result section to fill in.
 
 | Id | Question | Box |
 | --- | --- | --- |
@@ -18,5 +18,6 @@ in.
 | A5 | Does live microphone audio reach a Nemotron checkpoint through the WebSocket relay and come back as words within the latency budget, beside a training job? | 2 days |
 | S5 | Does one audio view render a 30-minute call with spectrogram and word tracks at 60 fps, across popouts, within WebGL limits? | 2 days |
 | F1 | Does a second training framework (k2/icefall) pass the conformance suite without changes outside its pack? | 3 days |
+| E1 | Does a cache-aware ONNX export of Nemotron pass parity with the pipeline decoder, and how many 80 ms streams does Triton serve per card? (phase 5) | 1 day |
 
 Status legend: `todo` · `running` · `done` · `partial` · `failed` · `deferred`.

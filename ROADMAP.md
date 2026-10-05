@@ -804,24 +804,32 @@ calls), and a canary promotion is approved in the UI (confirm modal) with its si
 Decide before starting:
 - [ ] **decide** → *R28 · confirm* Retention vs immutability: what happens to frozen versions containing expired production audio (B6)
 - [ ] **decide** → *R28, R29 · confirm* Confirm the proposed defaults: 90-day retention, PII masking rules (00 decision log)
+      — options and recommendations for the owner, with R31's concurrency and R32:
+      `docs/review/2026-10-05-phase-5-decisions.md`; the plan: `docs/review/2026-10-05-phase-5-plan.md`
 
 Write before starting:
-- [ ] **spec** → *R30* Staging serving: how Triton runs on the staging card for shadow replay and benchmarks, beside training
+- [x] **spec** → *R30* Staging serving: how Triton runs on the staging card for shadow replay and benchmarks, beside training
+      — 06 "Staging serving" (2026-10-05); the served model's memory and throughput **TBD spike E1**
 - [ ] **spec** → *R29* PII redaction step: NER model for Hebrew, span alignment to cut audio, what "redacted" guarantees
+      — needs the owner first (decisions brief, R29)
 - [ ] **spec** → *R32 · confirm* The Эра interfaces: samples push payload, operator corrections, dialogue context for the judge,
-      the per-call boost-list field and its cap
-- [ ] **spec** → *R33* What makes a Promotion record "signed"
-- [ ] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
-      neither (04 says only "beyond tolerance"); A3 records the first numbers
+      the per-call boost-list field and its cap — needs Эра first (decisions brief, R32)
+- [x] **spec** → *R33* What makes a Promotion record "signed" — 02 "Promotion records" (2026-10-05)
+- [x] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
+      neither (04 says only "beyond tolerance"); A3 records the first numbers — 03 "Export, parity and benchmark" and
+      `deploy.*` (2026-10-05); the target concurrency (32) stays a placeholder until the owner answers
 
 Deployment
 - [ ] `models.export` (ONNX cache-aware
       encoder/decoder/joint; GGUF where a CPU target exists); `models.parity`; Triton repository with sequence
       batching; `models.benchmark` (p50/p95, RTF, streams per card)
-- [ ] Deployments and Promotions: shadow (nightly replay from the call-recording mount), canary and production as
+- [x] Deployments and Promotions: shadow (nightly replay from the call-recording mount), canary and production as
       approvals; delivery script generated for the production host; rollback by script; boost lists as decode config
+      — streams D3 (records, bundles) and D4 (`deployments.*`, `shadowReplays.*`, migration 0051; 02 "Deployments as
+      built", 03 "Shadow replay"); real shadow hours wait for Эра's recordings mount (R32 е)
 - [ ] Hot words at decode (RNNT phrase boosting), dynamic per-call candidates per the Эра **spec**
-- [ ] Deployment targets declare the families and formats they serve; promotion checks them (R46)
+- [x] Deployment targets declare the families and formats they serve; promotion checks them (R46) — D2 (targets),
+      D4 (the checks, with the engine's card class and server release)
 - [ ] Transcriptions against the staging Triton deployment: production and candidate side by side, live and from
       files (R47); benchmark and shadow charts; PII spans and boosted terms as audio-view tracks (R51, R53)
 
@@ -834,7 +842,8 @@ Flywheel
       "Weekly flywheel", "Improve on telephony", "Fix names and terms" playbooks
 - [ ] Samples push API `POST /projects/{p}/samples` before the first canary
 
-Panels: Model, Shadow, Triage queue (triage mode); Ops workspace.
+Panels: Model, Shadow, Triage queue (triage mode); Ops workspace. — Model's deploy sections, Shadow, Settings →
+Deployment targets and the Ops workspace are built (stream D4); Triage queue mode waits for F2.
 
 ---
 

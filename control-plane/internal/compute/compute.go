@@ -27,23 +27,32 @@ import (
 const Kind = "compute"
 
 // JobKinds are the kinds of work a card may accept (the contract's JobKind).
-var JobKinds = []string{"training", "eval", "shadow", "export", "data", "interactive"}
+var JobKinds = []string{"training", "eval", "shadow", "export", "data", "interactive", "benchmark"}
 
 // JobTraining is the job kind of training runs.
 const JobTraining = "training"
 
 // Card is one card of a host. Its JSON form is the contract's ComputeCard and the stored form.
 type Card struct {
-	Index           int      `json:"index"`
-	Name            string   `json:"name"`
-	CardClass       string   `json:"cardClass"`
-	MemoryGB        float64  `json:"memoryGb"`
-	MemoryCapGB     float64  `json:"memoryCapGb"`
-	AllowedJobKinds []string `json:"allowedJobKinds"`
+	Index       int     `json:"index"`
+	Name        string  `json:"name"`
+	CardClass   string  `json:"cardClass"`
+	MemoryGB    float64 `json:"memoryGb"`
+	MemoryCapGB float64 `json:"memoryCapGb"`
+	// ServingReserveGB is the share of the cap a training step's whole-cap reservation leaves alone, for served
+	// models, shadow replay and live sessions (R30; 0: none).
+	ServingReserveGB float64  `json:"servingReserveGb,omitempty"`
+	AllowedJobKinds  []string `json:"allowedJobKinds"`
 	// Windows are the card's availability windows per job kind (R19); none means always open.
 	Windows Windows `json:"windows,omitempty"`
 	// Telemetry is the card's last report from a worker; filled on read (WithTelemetry), never stored in cards.
 	Telemetry *Telemetry `json:"telemetry,omitempty"`
+}
+
+// TrainingCapGB is the share of the cap a training step gets: the cap minus the serving reserve (06 "Staging
+// serving"). Calibrations and estimate rows are keyed by it.
+func (c Card) TrainingCapGB() float64 {
+	return c.MemoryCapGB - min(max(c.ServingReserveGB, 0), c.MemoryCapGB)
 }
 
 // Telemetry is what a worker last reported about a card (the contract's CardTelemetryReport).
@@ -120,13 +129,14 @@ func get(ctx context.Context, q storage.Querier, idOrName, lock string) (Host, e
 
 // CardEdit changes one card; nil fields stay as they are.
 type CardEdit struct {
-	Index           int
-	Name            *string
-	CardClass       *string
-	MemoryGB        *float64
-	MemoryCapGB     *float64
-	AllowedJobKinds *[]string
-	Windows         *Windows // replaces the card's windows; an empty map clears them
+	Index            int
+	Name             *string
+	CardClass        *string
+	MemoryGB         *float64
+	MemoryCapGB      *float64
+	ServingReserveGB *float64
+	AllowedJobKinds  *[]string
+	Windows          *Windows // replaces the card's windows; an empty map clears them
 }
 
 // EditInput is the body of compute.edit.
@@ -176,6 +186,16 @@ func Edit(ctx context.Context, tx pgx.Tx, idOrName string, rev int, in EditInput
 				Message: fmt.Sprintf("must be above 0 and at most the card's %v GB", c.MemoryGB)})
 		} else {
 			c.MemoryCapGB = capGB
+		}
+		reserve := c.ServingReserveGB
+		if e.ServingReserveGB != nil {
+			reserve = *e.ServingReserveGB
+		}
+		if reserve < 0 || reserve > c.MemoryCapGB {
+			fields = append(fields, problems.FieldError{Path: fmt.Sprintf("/cards/%d/servingReserveGb", i),
+				Message: fmt.Sprintf("must be between 0 and the card's cap (%v GB): training keeps the cap minus the reserve", c.MemoryCapGB)})
+		} else {
+			c.ServingReserveGB = reserve
 		}
 		if e.AllowedJobKinds != nil {
 			for j, k := range *e.AllowedJobKinds {
@@ -292,7 +312,7 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, hosts []defaults.Host, actor 
 			cards := make([]Card, 0, len(dh.Cards))
 			for _, c := range dh.Cards {
 				cards = append(cards, Card{Index: c.Index, Name: c.Name, CardClass: c.CardClass, MemoryGB: c.MemoryGB,
-					MemoryCapGB: c.MemoryCapGB, AllowedJobKinds: c.AllowedJobKinds})
+					MemoryCapGB: c.MemoryCapGB, ServingReserveGB: c.ServingReserveGB, AllowedJobKinds: c.AllowedJobKinds})
 			}
 			rows, err := tx.Query(ctx, `INSERT INTO compute_hosts (id, name, description, cards) VALUES ($1, $2, $3, $4)
 				ON CONFLICT (name) DO NOTHING RETURNING `+hostCols,

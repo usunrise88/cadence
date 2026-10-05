@@ -57,9 +57,9 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("dataset: %w", err)
 	}
-	// A measured estimate for the fixture base model on the seeded staging card (blackwell-48gb, 24 GB cap, bf16).
+	// A measured estimate for the fixture base model on the seeded staging card (blackwell-96gb, its 20 GB training share, bf16).
 	if _, err := pool.Exec(ctx, `INSERT INTO calibrations (base_model, card_class, memory_cap_gb, precision, seconds_per_step,
-			plus_minus, family, artifact_hash) VALUES ($1, 'blackwell-48gb', 24, 'bf16', 0.5, 0.1, $2, 'b3:e2e')
+			plus_minus, family, artifact_hash) VALUES ($1, 'blackwell-96gb', 20, 'bf16', 0.5, 0.1, $2, 'b3:e2e')
 		ON CONFLICT DO NOTHING`, pipelinestest.BaseModel, pipelinestest.FamilyName); err != nil {
 		return fmt.Errorf("calibration: %w", err)
 	}

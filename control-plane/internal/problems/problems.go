@@ -129,6 +129,23 @@ var (
 	AnnotationAgreementLow = Type{"annotation-agreement-low", http.StatusConflict, "Inter-annotator agreement too low"}
 	BatchClosed            = Type{"batch-closed", http.StatusConflict, "Annotation batch closed"}
 	InvitationInvalid      = Type{"invitation-invalid", http.StatusUnauthorized, "Invitation invalid"}
+	// Promotion records and delivery (phase 5 · stream D3).
+	PromotionReceiptMismatch = Type{"promotion-receipt-mismatch", http.StatusUnprocessableEntity, "Promotion receipt mismatch"}
+	DeliveryLinkInvalid      = Type{"delivery-link-invalid", http.StatusForbidden, "Delivery bundle link invalid or expired"}
+	// Staging serving (phase 5 · stream D2).
+	ServingUnavailable = Type{"serving-unavailable", http.StatusServiceUnavailable, "Staging server unavailable"}
+	ServingOverCap     = Type{"serving-over-cap", http.StatusConflict, "Served model over its memory reservation"}
+	TargetDoesNotServe = Type{"target-does-not-serve", http.StatusUnprocessableEntity, "Target does not serve this model"}
+	// Model exports, parity and benchmarks (phase 5 · stream D1); the last three are what a canary promotion's
+	// checks answer (stream D4).
+	ExportMissing         = Type{"export-missing", http.StatusUnprocessableEntity, "Model export missing"}
+	ParityFailed          = Type{"parity-failed", http.StatusUnprocessableEntity, "Parity check not passed"}
+	LatencyBudgetExceeded = Type{"latency-budget-exceeded", http.StatusUnprocessableEntity, "Latency budget exceeded"}
+	BenchmarkMissing      = Type{"benchmark-missing", http.StatusUnprocessableEntity, "Benchmark missing"}
+	// Deployments (phase 5 · stream D4): the rest of the promotion checks.
+	ShadowVolumeShort   = Type{"shadow-volume-short", http.StatusUnprocessableEntity, "Shadow volume short"}
+	CanaryRequired      = Type{"canary-required", http.StatusUnprocessableEntity, "Canary required"}
+	RollbackUnavailable = Type{"rollback-unavailable", http.StatusUnprocessableEntity, "Rollback unavailable"}
 )
 
 // Types lists every registered type.
@@ -153,6 +170,10 @@ func Types() []Type {
 		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
 		ExportNotAllowed, BundleInvalid,
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
+		PromotionReceiptMismatch, DeliveryLinkInvalid,
+		ServingUnavailable, ServingOverCap, TargetDoesNotServe,
+		ExportMissing, ParityFailed, LatencyBudgetExceeded, BenchmarkMissing,
+		ShadowVolumeShort, CanaryRequired, RollbackUnavailable,
 	}
 }
 

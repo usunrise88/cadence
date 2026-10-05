@@ -119,11 +119,29 @@ tools:
     operations: [agentProfile.edit]
     reason: the agent profile decides what agents may do and what they are told
 
-  # "Canary, production, rollback" → approval (shadow is decided by the promotion's own stage check, phase 5).
+  # A deployment target names production (R46, phase 5): creating or changing one is a registry-scope approval the
+  # admin decides, for people too, as mounts. Archiving one is the admin's (agents meet no-deletes below).
+  - id: deployment-targets
+    class: gated
+    everyone: true
+    operations: [deploymentTargets.new, deploymentTargets.edit]
+    reason: a deployment target names production; the admin decides where models are delivered and what each target serves
+
+  # A delivery is confirmed with the receipt the delivery script printed on a production host no agent reaches
+  # (R33, phase 5): agents never confirm one, whatever the receipt says.
+  - id: delivery-is-for-people
+    class: forbidden
+    operations: [promotions.verify]
+    reason: a delivery is confirmed by the person who ran its script on the production host
+
+  # "Canary, production, rollback" → approval, for people too (phase 5 · D4): every promotion and rollback is a
+  # signed record that names its approver (R33), so a person's own call waits for the confirm modal's decision too.
+  # Shadow deployments (deployments.new) are drafts; the promotion's checks run before anyone is asked.
   - id: deployments
     class: gated
+    everyone: true
     operations: [deployments.promote, deployments.rollback]
-    reason: deployments reach real traffic
+    reason: deployments reach real traffic; the signed promotion record names the person who approved it
 
   # A mount is shared by every project and reaches storage outside Cadence: registering one is a registry-scope
   # approval the admin decides, for people too (phase-4 plan stream M).
@@ -178,7 +196,7 @@ tools:
   - id: gpu-spend
     class: spend
     operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run,
-      goldenSets.align, pipelineRuns.retry, jobs.resume]
+      goldenSets.align, pipelineRuns.retry, jobs.resume, models.export, models.parity, models.benchmark, shadowReplays.new]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.

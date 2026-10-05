@@ -1,0 +1,189 @@
+#!/bin/sh
+# written by Cadence — the delivery script of promotion record {{.RecordID}} (cadence.delivery/1).
+#
+# Run it on the production host, from this bundle's directory, as a user who may write {{.RepositoryPath}}:
+#
+#   sh deliver.sh
+#
+# It stops at the first failure and then prints no receipt. In order (docs/spec/02-domain-projects-registry.md
+# "Promotion records"):
+#   1. the record's key must be the instance key pinned on this host ($CADENCE_PIN, default /etc/cadence/instance.pub);
+#   2. record.sig must verify over the SHA-256 of record.json under the pinned key, and every file must match;
+#   3. the model directory is installed under the repository path and loaded beside the version before it;
+#   4. the smoke utterances go through the new model and must match the text the staging server wrote;
+#   5. the slot's traffic is routed ($CADENCE_ROUTE_HOOK, default /etc/cadence/route; without one you route it);
+#   6. it prints one line, CADENCE-RECEIPT …: paste it into Cadence (Confirm delivery), which checks it.
+#
+# Needs a POSIX shell, sha256sum, OpenSSL 3.0 or newer, curl (to the inference server on this host), find, sort,
+# sed, grep, cut and tail. Environment: CADENCE_SERVER_URL (default http://localhost:8000), CADENCE_PIN,
+# CADENCE_ROUTE_HOOK. Cadence never reaches this host: this script is the only way a model gets here.
+set -eu
+
+RECORD_ID='{{.RecordID}}'
+RECORD_HASH='{{.RecordHash}}'
+KIND='{{.Kind}}'
+KEY_ID='{{.KeyID}}'
+TARGET='{{.Target}}'
+SLOT='{{.Slot}}'
+STAGE='{{.Stage}}'
+TRAFFIC_SHARE='{{.TrafficShare}}'
+MODEL_NAME='{{.ModelName}}'
+MANIFEST_SHA256='{{.ManifestSHA256}}'
+REPOSITORY_PATH='{{.RepositoryPath}}'
+SHIP_MODEL='{{if .ShipModel}}1{{else}}0{{end}}'
+SMOKE_TOTAL='{{.SmokeTotal}}'
+SMOKE_REQUIRED='{{.SmokeRequired}}'
+
+SERVER_URL="${CADENCE_SERVER_URL:-http://localhost:8000}"
+PIN="${CADENCE_PIN:-/etc/cadence/instance.pub}"
+ROUTE_HOOK="${CADENCE_ROUTE_HOOK:-/etc/cadence/route}"
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+trap 'exit 1' HUP INT TERM
+LOADED=''
+
+say() { printf 'deliver.sh: %s\n' "$*" >&2; }
+fail() {
+	say "STOPPED: $*"
+	say "no receipt was printed; Cadence still waits for this record's receipt"
+	exit 1
+}
+need() { command -v "$1" >/dev/null 2>&1 || fail "this host lacks $1"; }
+
+# sha_of < FILE: the hex SHA-256 of standard input.
+sha_of() { sha256sum | cut -c1-64; }
+
+# manifest_sha DIR: the SHA-256 of the "<sha256>  <path>" lines of every file under DIR, sorted by path (bytes);
+# Cadence computes the record's manifestSha256 the same way.
+manifest_sha() {
+	(cd "$1" && find . -type f -print | sed 's|^\./||' | LC_ALL=C sort | while IFS= read -r f; do sha256sum "$f"; done) | sha_of
+}
+
+# key_id PEM: ed25519: and the hex of the first 16 bytes of the SHA-256 of the raw 32-byte public key.
+key_id() {
+	raw=$(openssl pkey -pubin -in "$1" -outform DER 2>/dev/null | tail -c 32 | sha256sum | cut -c1-32) || return 1
+	[ ${#raw} -eq 32 ] || return 1
+	printf 'ed25519:%s\n' "$raw"
+}
+
+# expect FRAGMENT: record.json (verified below) must contain FRAGMENT verbatim, so this script's values are the record's.
+expect() {
+	grep -F -q "$1" "$HERE/record.json" || fail "record.json does not say $1: this script and its record disagree"
+}
+
+unload_new() {
+	if [ -n "$LOADED" ]; then
+		server_unload "$MODEL_NAME" || say "could not unload $MODEL_NAME; unload it by hand"
+		say "unloaded $MODEL_NAME; the version before it still serves"
+	fi
+}
+
+# ---------------------------------------------------------------- server functions (kind {{.ServerKind}})
+{{.ServerFunctions}}
+# ---------------------------------------------------------------- end of server functions
+
+for tool in sha256sum openssl curl find sort sed grep cut tail mktemp; do need "$tool"; done
+cd "$HERE"
+say "record $RECORD_ID: $KIND of slot $SLOT on $TARGET ($MODEL_NAME)"
+
+# 1. The pinned instance key.
+if [ ! -f "$PIN" ]; then
+	fail "no pinned instance key at $PIN. Install it once: copy the public key from Cadence (Settings → Deployment targets) to $PIN, check that its id is $KEY_ID (run this script again: it names the id of the pin it finds), then run this script again"
+fi
+PIN_ID=$(key_id "$PIN") || fail "$PIN is not an Ed25519 public key in PEM form"
+[ "$PIN_ID" = "$KEY_ID" ] || fail "the record is signed by $KEY_ID, but this host pins $PIN_ID: the instance key was rotated (check the new key and install it as the pin) or the bundle is not from your Cadence"
+
+# 2. The signature, then every file against the record.
+[ "$(sha_of < record.json)" = "$RECORD_HASH" ] || fail "record.json does not hash to $RECORD_HASH"
+openssl dgst -sha256 -binary -out "$WORK/hash" record.json || fail "openssl cannot hash record.json"
+openssl base64 -d -A -in record.sig -out "$WORK/sig" || fail "record.sig is not base64"
+openssl pkeyutl -verify -pubin -inkey "$PIN" -rawin -in "$WORK/hash" -sigfile "$WORK/sig" >/dev/null 2>&1 ||
+	fail "record.sig does not verify under the pinned key: the record was changed or not signed by your Cadence"
+expect "\"key\":{\"alg\":\"Ed25519\",\"id\":\"$KEY_ID\"}"
+expect "\"id\":\"$RECORD_ID\""
+expect "\"kind\":\"$KIND\""
+expect "\"slot\":\"$SLOT\""
+expect "\"manifestSha256\":\"$MANIFEST_SHA256\",\"modelName\":\"$MODEL_NAME\""
+say "signature verified under the pinned key $KEY_ID"
+{{- range .Decoding}}
+[ "$(sha_of < 'decoding/{{.File}}')" = '{{.SHA256}}' ] || fail "decoding/{{.File}} does not match the record"
+expect '"sha256":"{{.SHA256}}"'
+{{- end}}
+
+# 3. Install beside the version before it, then load.
+DEST="$REPOSITORY_PATH/$MODEL_NAME"
+if [ "$SHIP_MODEL" = 1 ]; then
+	[ -d "models/$MODEL_NAME" ] || fail "the bundle lacks models/$MODEL_NAME"
+	[ "$(manifest_sha "models/$MODEL_NAME")" = "$MANIFEST_SHA256" ] ||
+		fail "models/$MODEL_NAME does not match the record's files (manifest $MANIFEST_SHA256)"
+	say "model files match the record"
+	[ -d "$REPOSITORY_PATH" ] || fail "the repository path $REPOSITORY_PATH does not exist on this host"
+	if [ -e "$DEST" ]; then
+		[ "$(manifest_sha "$DEST")" = "$MANIFEST_SHA256" ] ||
+			fail "$DEST exists with other files; a model directory is never overwritten"
+		say "$DEST is already installed with the record's files"
+	else
+		cp -R "models/$MODEL_NAME" "$REPOSITORY_PATH/.$MODEL_NAME.partial.$$" || fail "cannot copy into $REPOSITORY_PATH"
+		mv "$REPOSITORY_PATH/.$MODEL_NAME.partial.$$" "$DEST" || fail "cannot move the model directory to $DEST"
+		say "installed $DEST"
+	fi
+else
+	[ -d "$DEST" ] || fail "$DEST is not installed on this host, but this $KIND keeps or restores it"
+fi
+SERVED=$(manifest_sha "$DEST")
+[ "$SERVED" = "$MANIFEST_SHA256" ] || fail "the installed $DEST does not match the record's files"
+if [ "$SHIP_MODEL" = 1 ]; then
+	server_load "$MODEL_NAME" || fail "the server at $SERVER_URL did not load $MODEL_NAME (see its log)"
+	LOADED=1
+	say "loaded $MODEL_NAME; the version before it stays loaded"
+fi
+server_ready "$MODEL_NAME" || {
+	unload_new
+	fail "$MODEL_NAME is not ready on the server at $SERVER_URL"
+}
+
+# 4. The smoke check through the new model.
+OK=0
+TOTAL=0
+if [ "$SMOKE_TOTAL" -gt 0 ]; then
+	if [ ! -f smoke/transcribe ] || [ ! -f smoke/manifest.tsv ]; then
+		unload_new
+		fail "the bundle lacks smoke/transcribe or smoke/manifest.tsv"
+	fi
+	[ -x smoke/transcribe ] || chmod u+x smoke/transcribe
+	TAB=$(printf '\t')
+	while IFS="$TAB" read -r wav want; do
+		TOTAL=$((TOTAL + 1))
+		got=$("$HERE/smoke/transcribe" "$SERVER_URL" "$MODEL_NAME" "$HERE/smoke/$wav" 2>>"$WORK/smoke.log") || got=''
+		if [ "$got" = "$want" ]; then
+			OK=$((OK + 1))
+		else
+			say "smoke $wav: the new model wrote \"$got\", staging wrote \"$want\""
+		fi
+	done <smoke/manifest.tsv
+	[ "$TOTAL" -eq "$SMOKE_TOTAL" ] || {
+		unload_new
+		fail "smoke/manifest.tsv lists $TOTAL utterances, the record's bundle $SMOKE_TOTAL"
+	}
+	[ "$OK" -ge "$SMOKE_REQUIRED" ] || {
+		unload_new
+		fail "the smoke check passed $OK of $TOTAL; $SMOKE_REQUIRED must match the staging text"
+	}
+	say "smoke check: $OK/$TOTAL match the staging server"
+fi
+
+# 5. Route the slot's traffic.
+if [ -x "$ROUTE_HOOK" ]; then
+	"$ROUTE_HOOK" "$SLOT" "$MODEL_NAME" "$TRAFFIC_SHARE" "$STAGE" "$HERE/decoding" || {
+		unload_new
+		fail "the route hook $ROUTE_HOOK failed"
+	}
+	say "routed $TRAFFIC_SHARE of slot $SLOT to $MODEL_NAME ($STAGE)"
+else
+	say "no route hook at $ROUTE_HOOK: route $TRAFFIC_SHARE of slot $SLOT's traffic to $MODEL_NAME ($STAGE) through your routing now"
+fi
+
+# 6. The receipt.
+printf 'CADENCE-RECEIPT 1 %s %s %s/%s %s %s\n' "$RECORD_HASH" "$SERVED" "$OK" "$TOTAL" "$(uname -n)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"

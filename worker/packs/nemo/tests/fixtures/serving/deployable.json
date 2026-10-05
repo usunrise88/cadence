@@ -1,0 +1,22 @@
+{
+ "schema": "cadence.deployable/1",
+ "format": "fixture-step-graph",
+ "family": "nemo.fastconformer-rnnt.cache-aware",
+ "profile": "80ms",
+ "weightsHash": "fixture",
+ "serving": {
+  "server": {
+   "kind": "triton",
+   "minVersion": "26.08"
+  },
+  "modelDir": "model",
+  "memoryMb": 512,
+  "maxStreams": 64,
+  "sampleRate": 16000,
+  "chunkMs": 80,
+  "boost": {
+   "static": false,
+   "dynamic": false
+  }
+ }
+}

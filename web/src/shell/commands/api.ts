@@ -64,8 +64,10 @@ import type { EvaluationCommands } from "./evaluation";
 import type { DataCommands } from "./data";
 import type { TranscriptionCommands } from "./transcriptions";
 import type { StorageCommands } from "./storage";
+import type { ShadowCommands } from "./shadow";
 import type { AnnotationCommands } from "./annotation";
 import type { TrainingCommands } from "./training";
+import type { DeployCommands } from "./deploy";
 
 // Commands behind the Approvals, Settings and Getting started panels (phase 1). Each mutating command is exactly
 // one API operation and carries its operationId as id; panels run them through `runCommand` (the panel SDK), which
@@ -118,7 +120,9 @@ export type ApiCommands = {
   TranscriptionCommands &
   StorageCommands &
   DataCommands &
-  AnnotationCommands;
+  AnnotationCommands &
+  DeployCommands &
+  ShadowCommands;
 export type ApiCommandId = keyof ApiCommands;
 
 /** Runs a registered command with typed arguments; rejects with the command's error (a ProblemError for the API). */

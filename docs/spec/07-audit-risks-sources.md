@@ -899,6 +899,101 @@ owner may overrule):
       0.318 / 0.322, 1120 ms 0.304 / 0.311; emission PR50 0.38, 0.40, 0.45, 0.54, 0.81 s. `160ms` lies on the curve
       between its trained neighbours in both WER and delay — no sign of an untrained look-ahead. **Recommendation:**
       keep it, labelled "not a trained look-ahead" in the family descriptor; the owner decides.
+- [ ] P5 spec (2026-10-05, deployment): R31's "WER difference ≤ 0.1 absolute" is read as 0.1 WER **points**
+      (`deploy.parity_max_wer_delta` 0.001), as in A3's acceptance ("within 0.1 point"); 0.1 as a fraction would let
+      a 10-point gap pass.
+- [ ] P5 spec: the canary's default traffic share (5 %, `deploy.canary_share`) and the absence of a minimum canary
+      period are Cadence recommendations; the spec only says flywheel signals decide whether the share grows.
+      Production needs a confirmed canary of the same model version on the slot, nothing more.
+- [ ] P5 spec: benchmarks run on the staging card; Эра's production card class may differ. A benchmark records the
+      card class and the promotion modal shows a mismatch, but does not refuse it. Likewise a staging Triton version
+      different from the delivery target's is shown, not refused, and both versions go into the record. **Changed by D4:** a
+      server release other than the one the export's engine was built for is refused (the engine would not load).
+- [ ] P5 spec: the parity sample comes from the project's first target golden set, and up to 20 of its utterances
+      travel in every delivery bundle as the smoke check. For a golden set cut from Эра's calls that is Эра's own audio
+      going back to Эра's host; it must still be redacted when R29 lands if bundles are kept outside the production host.
+- [ ] P5 spec: shadow replay compares the candidate with the slot's production version, or with the project's
+      baseline before any production exists, both decoded on the staging server. Shadow hours count each replayed
+      call once by its duration. The calls mount itself (Эра's recordings, read-only) does not exist yet.
+- [ ] P5 spec: the stand's card numbers (cap 29 GB, serving reserve 7 GB, training 22 GB) assume ≈ 30 GB free beside
+      vLLM on the 98 GB card. `defaults.yaml` `compute` still describes the 48 GB card of phase 2; the stand overrides it
+      with `compute.edit`, and stream D2 adds `servingReserveGb` (default 0).
+- [ ] P5 spec: the instance signing key is created with the first delivery target. A lost key means a new chain
+      (a `key-rotation` record needs the old key) and re-pinning on the production host; a leaked key is revoked by
+      re-pinning. Neither case is automated.
+- [ ] P5 D1 (owner to confirm): parity's identical share is 0.97, not R31's 0.995, plus a word-disagreement bound
+      0.005 (`deploy.parity_min_identical_share`, `deploy.parity_max_disagreement`; Δ WER stays ≤ 0.1 points). Spike E1:
+      NeMo's own decoder agrees with itself on 98.5 % of the 200 clips between batch 8 and batch 1, fp32 exports 96–99 %,
+      fp16 76 % (disagreement fp32 ≤ 0.0033, fp16 0.017). The same share sets the delivery smoke check: ⌈0.97 × 20⌉ = 20,
+      so every smoke utterance must still match. The stand's served fp32 engine matched NeMo's tokens on 20/20 smoke
+      utterances (2026-10-05).
+- [ ] P5 D1: the deployable serves spike E1's step graph and **the caller sends features** (the pipeline decoder's
+      feature buffers): no featuriser is served in v1. Parity therefore compares engines on identical buffers; a
+      production front end that does not reproduce `cadence_nemo.pipeline.Features` exactly (whole-stream log-mel) can
+      give other finals, and parity does not measure that. Endpointing, detokenisation and locale-tag stripping stay in
+      the caller too (E1). Next item: a stateful featuriser model before the step graph in the Triton repository
+      (implicit state: two frames of audio and the pre-encode cache), with parity run from audio; it also lets the smoke
+      set carry WAVs instead of feature files (≈ 2 MB of JSON per utterance today). Эра's answer to "tokens or text,
+      endpointing in the client or in a Cadence-built gateway" (E1 question 7) decides its shape.
+- [ ] P5 D1: a TensorRT engine runs only on the GPU architecture and the TensorRT it was built with. The export builds
+      it on the staging card with the TensorRT of the staging server's Triton (the worker image carries `trtexec` and its
+      libraries from `nvcr.io/nvidia/tritonserver:26.08-py3`, pinned by digest; Triton 26.08 → TensorRT 11.2.1), and
+      records `serving.engine` (TensorRT version, card class, GPU name, compute capability) in the deployable. A delivery
+      target on another card class or Triton release cannot load it: D4's promotion checks should refuse that (not only
+      show it), and an engine for Эра's card needs an export on that card class (not built: one export per (version,
+      profile, format)). The ONNX step graph in the deployable is the portable artifact to rebuild from. **D4 (2026-10-05):** the
+      promotion's `engine` check refuses it (`target-does-not-serve`) when both sides name the card class and the
+      server release; the benchmark's own card class is still only shown.
+- [x] P5 D1: the staging target seeded from `serving.staging_target` names Triton 26.07; the export's engine builder is
+      26.08's (`packs.nemo.export_server_version`). The staging server must run 26.08 (E1's workarounds were measured
+      on it): stream D2 pins `serving.image` and the staging target's version. Stream D12 (2026-10-05): the seed
+      (`serving.staging_target.server.version`), `serving.image`, the compose service `triton` (same digest) and the
+      export's `server_version` all say 26.08, and an engine built by `nemotron_export@1` loaded and served on that
+      image.
+- [ ] P5 D1: benchmark levels default to 1, 8, 16, 32, 64, 128 (`deploy.benchmark_streams`), up to the deployable's
+      128-stream capacity (`packs.nemo.export_max_streams`), which fits the stand's 7 GB serving reserve (Triton held
+      6.2 GB with the 80 ms fp32 engine loaded); E1 found 256 streams within budget, which needs a larger state pool.
+      The verdict reads p95 chunk latency from audio availability (E1's reading of R31's "time to final ≤ chunk + 100
+      ms"); time to final is reported beside it.
+- [ ] P5 D1: a waiting benchmark drains every card that accepts benchmarks on every host (not only the card it will
+      take) while it is within `deploy.benchmark_drain_max_minutes` of being queued; jobs ahead of it in start order
+      (interactive sessions, higher priorities) still start. One card on the stand makes the difference moot.
+- [ ] P5 D12: a benchmark level's `foreignUtilPct` (what processes outside the server use of the card) is the card's
+      utilisation sampled for 2 s before and, after a 1.5 s settle, 2 s after the level, with the model loaded and no
+      stream of the step running (the larger): the worker cannot tell the server's processes from others by PID inside
+      its container. A foreign load that starts and stops within the level is not seen. Likewise `memoryUsedMb`, so the
+      report's `servingMemoryMb`, is the whole card's used memory (74 GB on the stand with the resident services), not
+      the server's; the model's own footprint is the serve step's load measurement (`tookMb`, 4.1 GB for the 80 ms
+      engine with a 2 GB pool).
+- [ ] P5 D12: the served text follows NeMo's text processor where it is clear (no space before closing punctuation; a
+      final that starts with it continues the previous word), but NeMo's cache-aware pipeline drops a trailing `.` the
+      model emits after the last endpoint on some utterances (18 of 49 token-identical FLEURS sr utterances), and the
+      served client keeps it. Parity compares token ids, and the scoring normalizer strips punctuation, so ΔWER is 0;
+      a normalizer that keeps punctuation would count it. Matching NeMo exactly means reproducing its segment state
+      machine in the client, or serving the text (Эра's answer to E1 question 7).
+- [ ] P5 D12: `nemotron_serve` in batch mode streams from one process (a thread per stream, precomputed features). On
+      the stand 64 real-time streams held p95 19.7 ms; E1 needed 4–8 client processes beyond about 128 streams, so the
+      higher benchmark levels (128) may measure the client's GIL as much as the server. Split the streams over
+      processes if a level's chunk latency rises while the server's own queue and compute times (`server` row) do not.
+- [ ] P5 D12: the NeMo pack's conformance run (nightly) now reaches the export, parity and benchmark stages through
+      `nemotron_serve`, which needs a staging server in its lease; the nightly image has no Triton, so those stages fail
+      there until the nightly job starts one (the compose profile `serving`) or the suite skips serve without a lease.
+- [ ] P5 D4: `deployments.new` requires `replay.source` (a registered source for the recordings: "no licence, no
+      ingest"), which 02's sketch `{mount, path?}` did not name; Эра's recordings need a production source registered
+      (and cleared) before their first shadow.
+- [ ] P5 D4: "newest unreplayed calls first" uses the mount's file modification times (an S3 mount's stamp is an
+      ETag: its calls are taken in reverse path order instead) and sizes a call from its WAV header, else at 16 kB/s
+      (G.711 stereo). Эра's recordings layout and format (R32 е) may need a better clock (a sidecar's call time).
+- [ ] P5 D4: the nightly shadow replay runs as the system actor without a GPU-budget decision (a project's spend is
+      not checked at night); `shadowReplays.new` goes through the usual `gpu-spend` policy.
+- [ ] P5 D4: shadow retention evicts the night's artifacts permanently, but a backup mirror that already copied them
+      keeps them; F1's retention sweep (R28) should cover the mirror too.
+- [ ] P5 D4: `sdp_ingest` moved to @3 (`files`); a project repository that pins `@2` (the stand's projects) must bump
+      its pins: a worker publishes one version of a kind.
+- [ ] P5 D4: marking a shadow segment for triage (11, Shadow panel) is left to stream F2 (the triage queue of
+      production samples); the Shadow panel opens segments in Diff and Audio only.
+- [ ] P5 D4: the benchmark chart draws what `models.get` carries per benchmark (the verdict level's p95 against the
+      budget, the most streams within it); a per-level latency curve (R53) needs the report's levels in the API.
 
 ## Sources
 

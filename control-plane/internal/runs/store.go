@@ -65,10 +65,12 @@ type Runtime struct {
 
 // Card is the card an estimate was made for.
 type Card struct {
-	ComputeID   string  `json:"computeId,omitempty"`
-	Host        string  `json:"host,omitempty"`
-	Index       int     `json:"index"`
-	CardClass   string  `json:"cardClass,omitempty"`
+	ComputeID string `json:"computeId,omitempty"`
+	Host      string `json:"host,omitempty"`
+	Index     int    `json:"index"`
+	CardClass string `json:"cardClass,omitempty"`
+	// MemoryCapGB is the training share of the card's cap (its cap minus its serving reserve): what a training step
+	// gets, and the key of calibrations and estimate rows.
 	MemoryCapGB float64 `json:"memoryCapGb,omitempty"`
 }
 

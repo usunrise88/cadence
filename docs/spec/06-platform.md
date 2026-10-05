@@ -47,7 +47,7 @@ Topic scheme, canonical for both tabs:
 | `pipeline_run.{id}` | `pipeline_run.started`, `pipeline_run.step_changed`, `pipeline_run.state_changed` |
 | `run.{id}.status`, `run.{id}.metrics` | Training run state; metric points (`run.metrics`) |
 | `eval.{id}.progress`, `entity.eval.{id}` | Cells done and total and the eval's state (phase 3); the eval's revision changes, its gate verdict included |
-| `deploy.{id}`, `shadow.{deployment}` | Deployment stage changes; divergence samples |
+| `deploy.{id}`, `shadow.{deployment}` | Deployment stage changes and promotion records (`deployment.created|stage_changed`, `promotion.pending|confirmed|withdrawn`); a night's shadow replay with its divergence samples (`shadow.replayed`; phase 5, "Staging serving") |
 | `queue`, `gpu`, `mount.{id}` | Queue changes (`queue.changed` with `change`); card telemetry (`gpu.telemetry`, ≤ 1 per 5 s per host); mount health |
 | `triage.new`, `approvals` | New triage items; approval requests and decisions |
 | `agent.session.{id}`, `agent.sessions` | One transcript; the session list |
@@ -575,6 +575,135 @@ Audio indexed in place and the tracks (phase 4, stream A; `internal/media` `wind
   view draws them as the energy, VAD and channel tracks.
 - Not built: the tile pyramid on demand for long audio, peaks at ingest, a reference-alignment track in the audio view.
 
+## Staging serving (phase 5, R30)
+
+_Specified 2026-10-05 before phase 5; the server, the serve role and the memory numbers filled from spike E1
+(`docs/spikes/E1-onnx-triton.md`) by stream D2 (as built: `internal/serving`, migration 0049, `nemotron_serve@1`).
+Exports, parity, benchmarks and shadow replay as pipelines: 03 "Export, parity and benchmark (phase 5)"; the
+entities: 02 "Deployment entities"._
+
+Cadence serves candidates on the staging card with the same server production runs, so parity, benchmarks, shadow
+replay and manual tests measure what production would do. It never reaches a production server.
+
+**The server.**
+
+- Compose service `triton` in profile `serving` (image `serving.image`: Triton **26.08**, pinned by digest; E1 ran
+  26.08 — ONNX Runtime 1.28 backend, TensorRT 11.2.1), started like the other profiles
+  (`docker compose --profile serving up -d triton`); Cadence does not start or stop it.
+- It runs with `--model-control-mode=explicit --disable-auto-complete-config --exit-on-error=false` (26.08
+  deprecates `--strict-model-config`) and an empty repository at start. Its model repository is the `serving` volume:
+  read-only in `triton` at `/models`, read-write in the GPU worker at `/var/lib/cadence/serving`
+  (`CADENCE_SERVING_DIR`).
+- **Its CUDA memory pool sets its concurrency** (E1): the sequence batcher keeps every live stream's implicit state
+  (12.6 MB per stream in and out, fp32, 80 ms) in the pool, and state that does not fit falls back to host memory and
+  caps the server at about 64 streams. Compose passes `--cuda-memory-pool-byte-size` from
+  `CADENCE_TRITON_CUDA_POOL_MB`, default `deploy.triton_cuda_pool_mb` (4 096 MB: 256 streams). Never
+  `use_growable_memory` for implicit state (E1: it reserved 23 GB and refused every request). The server's footprint
+  is about engine + pool + 2 GB (E1: 8.7 GB with the 2.4 GB fp32 TensorRT engine and the 4 GB pool at 256 streams).
+- It sits on the compose network `serving` only (internal, no route out; HTTP 8000, gRPC 8001, metrics 8002) and
+  publishes no host port (R39). The control plane and the GPU worker join that network. The staging target's
+  `endpoint` names it, and the worker steps of the family's `serve` role are its only stream clients.
+- **Health.** The control plane checks every active staging target every `serving.health_check_seconds` (60) on the
+  health path of its server kind, kept as data in `serving.servers` (Triton: `/v2/health/ready`; no Go code names a
+  server's protocol). It keeps the state (`serving_health`: `up`, `down`, `unknown` until the first check, since when,
+  the error, the latency), emits `deployment_target.health` on a change, and `deploymentTargets.list|get` return it
+  as `health`. Work that needs the server while it is down is refused `serving-unavailable` (503; `serving.Check`),
+  and a serve step that cannot reach it fails `serving-unavailable` (retryable).
+- **Served models.** A step that consumes a `deployable` is a served step: the grant hook (`internal/serving`) puts
+  the target's endpoint, server kind and version, and each deployable's versioned model name
+  (`cadence-<16 hex of its hash>`) in the lease's environment (`CADENCE_SERVING_*`), or `CADENCE_SERVING_REFUSED`
+  when the target named by the step's `target` parameter (default `serving.default_target`) is unknown, archived, a
+  delivery target, or does not list the deployable's family, format or profile (`target-does-not-serve`). The lease
+  is counted per model (`serving_leases`, `serving_models`; `deploymentTargets.get` → `servedModels` with their lease
+  counts). The serve step copies the deployable's model directory into the volume under the model name and loads it
+  through the model-control API unless the server has it ready.
+- **Unloading** (as built, a change from "the worker unloads"): the same periodic check reconciles the models with
+  the server's repository index (a model the server no longer has ready is marked unloaded) and unloads, through the
+  server kind's unload path, every model no active lease has used for `serving.unload_idle_minutes` (30). The control
+  plane already reaches the staging server for its health, while a worker has no lease once the last one ended. The
+  model directories stay in the volume (2–3 GB each); pruning them is left for later.
+- **Memory.** Triton has no process-wide cap. The family's repository builder bounds each model (the engine's
+  workspace), sized to the deployable's `serving.memoryMb`, else `serving.model_memory_gb` (9 GB, E1's 8.7 GB). After
+  a load the step compares the card's telemetry with the reading before it; a model over its reservation by more than
+  `serving.over_cap_slack_mb` (512 MB) is unloaded and the step fails `serving-over-cap`.
+
+**Job kinds.** One kind joins the queue, `benchmark`; `export` and `shadow`, listed on cards since phase 2, get
+their first work (Compute: allowed job kinds and availability windows per kind):
+
+| Kind | Work | Card use |
+| --- | --- | --- |
+| `export` | `models.export` (the family's export step) | As declared by the step; A3's export ran on the CPU in about 2 min per profile |
+| `shadow` | Nightly shadow replay (two `serve` steps) | Throughput work that shares the card: the served models' reservation, taken from the serving reserve (below) |
+| `benchmark` | `models.benchmark` | The card alone: no other Cadence lease on it, and none starts until it ends |
+| `eval` | Parity (the reference decode and a `serve` step at concurrency 1) | As evals; the served model's reservation comes from the serving reserve |
+| `interactive` | Manual tests, including against the staging deployment (below) | As in phase 3, never beside a `benchmark` |
+
+**Exclusive benchmarks.** A benchmark is leased only on a card that holds no other Cadence lease. While a benchmark is
+the card's next job by priority, no new lease starts on that card (the Queue shows "draining for a benchmark"), for
+at most `deploy.benchmark_drain_max_minutes` (30); then it yields and waits for a gap. It never preempts training: a
+person may pause the run, which saves its training state, or set a `benchmark` availability window at night.
+Processes outside Cadence (vLLM on the stand) cannot be drained, so the step samples the card's telemetry during each
+level and the card's utilisation with the model idle just before and after it (stream D12: the worker cannot tell the
+server's processes apart by PID; 07 "Open questions"), and a level where they used more than `deploy.benchmark_max_foreign_util_pct` (10 %) of the card is marked
+`contended`. A contended level at the target concurrency makes the verdict `inconclusive` (promotion needs
+`passed`); the report keeps its numbers.
+
+**Beside training on the stand.** The stand's card is now an RTX PRO 6000 Blackwell, 96 GB (E1, 2026-10-04; A3's
+48 GB RTX PRO 5000 is gone), with about 67.5 GB held by resident services (an LLM engine, TTS, embeddings, another
+Triton) and about 30 GB free. Compute has `servingReserveGb` per card: a share of the card's cap that a training
+step's whole-cap reservation leaves alone, used first by served models, `shadow` and `interactive` jobs. The queue
+(`internal/queue`):
+
+- every other job fits under the cap minus the reserve (and minus what serving work took beyond the reserve);
+- serving work takes the reserve first and the rest of the cap when the reserve is full;
+- a served model is reserved once per card however many leases use it (leases are keyed by their model);
+- calibrations and the estimate table are keyed by the training share (cap minus reserve).
+
+`defaults.yaml` `compute` now seeds the stand's card:
+
+| Card | Cap (Cadence) | Serving reserve | Training (cap minus reserve) | What fits in the reserve |
+| --- | --- | --- | --- | --- |
+| `blackwell-96gb`, 96 GB | 29 GB (≈ 30 GB free, 1 GB slack) | 9 GB | 20 GB | One served model (E1: Triton 8.7 GB, fp32 TensorRT engine, 4 GB pool, 256 streams), or one NeMo live session (6 GB, A5), not both |
+
+A3's 22 GB training share was measured on the old card; on this card 20 GB is a cap the calibration sizes the
+buckets under (the estimate row for `blackwell-96gb` at 20 GB reuses A3's 0.7 s/step until `runs.calibrate`
+measures it). Shadow replay runs beside a training run and slows it only through shared compute. Benchmarks wait for
+the card to be free. Setting `servingReserveGb` is `compute.edit` (validated 0 ≤ reserve ≤ cap); hosts seeded before
+this change keep their configuration.
+
+**Manual tests against the staging deployment (R47).** `transcriptions.new` accepts a target of kind `deployment`
+(a `dep_` whose export the staging server can serve). Its lanes decode through the staging Triton, so the page shows
+the served model's words. The live job is the family's `serve` client in relay mode, of job kind `interactive`. It
+holds no model of its own, and its reservation is the served model's, from the serving reserve. This refines R49's
+"a Triton target needs no worker job": it needs no GPU of its own, but the stream protocol to the server is the
+family's, so a pack speaks it and the control plane does not.
+
+As built (stream D2): `transcriptions.new` takes `deploymentId` targets; a session's targets are all deployments or
+none (one job serves a session), served by one staging target, at their export's profile, without a per-session
+boost list (static lists ship with the promotion; the per-call field waits for R32). The job is the family's `serve`
+kind with `mode: relay` and `target`, reserving the served models (`serving.model_memory_gb` each unless the
+deployable states one). The request is refused `serving-unavailable` when the target's last check found it down.
+Deployments are resolved through `transcriptions.Deployments`, which `internal/deployments` implements (stream
+D4): a shadow's export through its own staging target, a canary's or production's through `serving.default_target`;
+a retired or rolled-back deployment serves nothing (`conflict`).
+
+**The serve role's client** (`nemotron_serve@1`, E1's design): the client computes the features the pipeline
+decoder would (the export's preprocessor) and sends the same buffers `nemotron_transcribe` decodes, one request per
+chunk over HTTP with binary tensors, a sequence per utterance; endpointing (a final after `stop_history_eou_ms`
+without a token), detokenisation and the locale tag stay in the client, as E1 found Эра's client must do them. Batch
+mode streams a dataset at a concurrency, paced or fast, once or for `warmup_seconds` + `seconds`, and writes
+`hypotheses` (with `tokens`) and `serving_timings` in `cadence.serving-timings/1` (03 "Artifacts": a header, a `chunk`
+row per chunk with when its audio was complete and when its tokens were back, the card's telemetry each second, the
+server's statistics over the level), which `benchmark_score@1` reads. The client reads the geometry, the tokenizer's
+pieces and the front end from `streaming_cfg.json` in the deployable's model directory (stream D12). The mel front end runs in the client, not as a served model (E1 left it to the builder);
+a served front end is a later change of the export and the client together.
+
+**Events.** `deploy.{id}` carries the deployment's stage and promotion records. `shadow.{deployment}` carries
+`shadow.replayed` (hours, divergence, the most divergent segments by id) after each night; as built (stream D4) also
+`shadow.started`, `shadow.skipped` (the night's reason) and `shadow.failed`, and `shadow.replayed` once more on
+`deploy.{id}` with the deployment's total hours. The staging target's
+health goes on `entity.deployment_target.{id}`.
+
 ## Operations
 
 Cadence upgrades itself the way it upgrades models: versioned, forward-only, with a nightly backup that is restored on a schedule to prove it works.
@@ -587,7 +716,7 @@ Cadence upgrades itself the way it upgrades models: versioned, forward-only, wit
 | Upgrade | Pull the release, `compose up`; a failed migration stops the start and leaves the previous image runnable; rollback is the previous image plus, if data changed, the last backup |
 | Backups | Nightly `pg_dump` and a content-store mirror into `CADENCE_BACKUP_DIR` (the `cadence-backups` volume), or since phase 4 the mirror onto a writable path mount (`backups.mirror_mount`); a weekly automated restore into a scratch database with a report; targets: 24 h RPO, 1 h RTO (as built below) |
 | Failures | River retries with backoff; a worker heartbeat every 10 s, leases reaped after three missed beats (step error `lost`, one retry); an OOM gets one automatic retry at 0.75× batch; a host whose workers went quiet turns `unreachable` (`compute.health`); a project over its cache quota cannot freeze (`storage-quota-exceeded`, phase 4); an unhealthy card closes its slot (not built: card health is per host today) — every case is an event, so it notifies |
-| Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
+| Availability windows | Each compute card has windows per job kind (training, eval, shadow, export, data, interactive, benchmark; none means always open, the default): each window is a set of weekdays, an opening and a closing time `HH:MM` (an end at or before the start closes the next day, `24:00` is midnight; a window past midnight belongs to the day it opens) and an IANA time zone per window (default: the instance time zone, `policies.timezone`, resolved when the queue checks the window — so a policy change moves windows that name none), edited with `compute.edit`. The queue starts a job only if its estimate fits before the window closes; a job without an estimate, or one resuming from a training state, starts in any open window. Training saves a checkpoint and its training state every 20 minutes (the training step's duty; the NeMo pack's); at a close the heartbeat answers `stop: window-closed` to training steps only (other kinds finish), the step saves and releases, and the job waits in its place for the next window and resumes from the last training state (`resumeFrom`). The same path makes long runs preemption-safe on the shared staging card (R19) |
 | Health | `/healthz` on the control plane, worker heartbeat, mount checks (`mount_check@1`, every `storage.mount_check_hours`; each emits `mount.health`; a step that reads a mount whose last check failed does not start, `mount-unhealthy`); a status card in Settings; a Prometheus endpoint |
 | Retention | Job log files are deleted 14 days after their last line (a daily chore); metric points live as long as their run; content-store blobs are kept until a person approves `artifacts.evict` (superseded training states only; Settings → Content store, and a `storage.low_space` failure notification below `cache.store_low_free` free), except eval records' per-utterance artifacts, evicted `eval.artifact_retention_days` (30) after the record's last use by a daily sweep (owner decision 2026-10-03); dataset shards with a copy on a mount are evicted by the cache sweep (phase 4, below); the audit log is kept one year; production audio follows the retention policy |
 

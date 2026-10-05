@@ -184,9 +184,30 @@ Process:
 
 Windows: Model, Shadow, Approvals, Queue & GPU, Metrics (latency view), Library.
 
-Agent tools: `models.register` (phase 3, Block 3), `models.export`, `models.parity`, `models.benchmark`, `deployments.``promo``te` (shadow directly; canary and production as approval requests), `deployments.rollback` (approval request).
+Agent tools: `models.register` (phase 3, Block 3), `models.export`, `models.parity`, `models.benchmark`, `deploymentTargets.list|get`, `deployments.new` (shadow, directly), `deployments.list|get`, `deployments.promote` (canary and production as approval requests), `deployments.rollback` (approval request), `promotions.list|get`, `deploymentTargets.new|edit|archive` (an approval the admin decides, for people too). Not for agents: `promotions.verify` (a person pastes the receipt the delivery script printed on a production host).
 
 Gates: parity and latency budget must pass; shadow must reach a minimum volume before canary; canary, production and rollback need a person, and production and rollback are executed by that person through the generated delivery script.
+
+Specified for phase 5 (2026-10-05; numbers from spike E1, `docs/spikes/E1-onnx-triton.md`; steps 2–4 built by stream D1):
+
+- Steps 2–4 are `models.export`, `models.parity` and `models.benchmark`: pipelines generated per request in the
+  family's runtime (roles `export`, `serve`, `parity reference`) with neutral scorers (03 "Export, parity and
+  benchmark (phase 5)"). Their results attach to the model version as exports (02 "Deployment entities").
+- Thresholds (R31, `deploy.*`): parity on a fixed 200-utterance sample of the first target golden set, WER difference
+  ≤ 0.1 points absolute, ≥ 97 % identical token sequences (owner to confirm; R31 said 99.5 %) and word disagreement ≤
+  0.005; p95 chunk latency from audio availability ≤ 100 ms (a word waits at most chunk +
+  100 ms) at the target's concurrency (32, a placeholder until Эра's peak is known). E1 measured the served fp32
+  TensorRT engine at 99.0 % identical, Δ 0.000, and p95 20 ms at 32 streams, 63 ms at 256 (A3's Python backend: 867 ms at 32).
+- The staging Triton is the compose profile `serving`. Benchmarks take the card alone; shadow replay shares it from a
+  serving reserve that training leaves alone (06 "Staging serving").
+- Step 5 is a shadow deployment (`deployments.new`) replayed every night from a calls mount until it reaches 20 h;
+  step 6 and 7 are `deployments.promote` to a delivery target (R46: it must serve the family, format and profile).
+  Each yields a signed, hash-chained Promotion record and a delivery bundle; the person runs `deliver.sh` on the
+  production host and pastes its receipt line into Cadence (`promotions.verify`), which confirms the stage (R33).
+  Rollback is the same path with a small script; the previous version stays loaded.
+- Static boost lists ship in the bundle as decoding configuration; a changed list is a config-only promotion. The
+  per-call field for dynamic candidates waits for Эра (R32, the decisions brief
+  `docs/review/2026-10-05-phase-5-decisions.md`).
 
 ## Block 5 — Production flywheel
 
@@ -334,8 +355,10 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Register model | Eval report, Model, Experiment | Register model version | `POST /projects/{p}/models:register` (`models.register`, writes a registry version; needs a passed gate, approval for agents); `models.list`, `models.get` under `/registry/models` | `models.register`, `models.list`, `models.get` | `entity.model.{id}` |
 | Lineage | Lineage, Library | — | `GET /registry/{id}:lineage` (`registry.lineage`; `direction`, `depth`, `limit`) | `registry.lineage` | — |
 | Language pack, boost lists | Language pack | Edit language pack; Edit boost list | `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` (`/projects/{p}/langpacks/{locale}[/boost/{domain}]`, files in `lang/<locale>/`) | `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` | `recipe.{path}` |
-| Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /models/{id}:export`, `:parity`, `:benchmark` | `models.*` | `job.{id}` |
-| Shadow, canary, production, rollback | Model, Shadow, Approvals | Promote; Roll back | `POST /projects/{p}/deployments`; `…:rollback` | `deployments.``promo``te`, `deployments.rollback` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
+| Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /projects/{p}/models:export`, `:parity`, `:benchmark` (body `{version, …}`; phase 5) | `models.export`, `models.parity`, `models.benchmark` | `entity.model.{id}`, `pipeline_run.{id}`, `job.{id}` |
+| Deployment targets | Settings (Deployment targets), Model | New target (approval, admin); Edit target | `deploymentTargets.list|get|new|edit|archive` (`/deployment-targets`; phase 5, R46) | `deploymentTargets.list`, `deploymentTargets.get` | `entity.deployment_target.{id}`, `approvals` |
+| Shadow, canary, production, rollback | Model, Shadow, Approvals | Deploy to shadow; Replay now; Promote (confirm modal); Roll back | `POST /projects/{p}/deployments` (`deployments.new`, shadow); `GET\|POST /deployments/{id}/shadow-replays`, `GET /shadow-replays/{id}`; `POST /deployments/{id}:promote`, `:rollback` (checks, then an approval for everyone; signed record and delivery bundle) | `deployments.new`, `deployments.list`, `deployments.get`, `deployments.promote`, `deployments.rollback`, `shadowReplays.list`, `shadowReplays.get`, `shadowReplays.new` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
+| Confirm a delivery | Model, Approvals | Confirm delivery (paste the receipt) | `promotions.list` (`GET /deployment-targets/{id}/promotions`), `promotions.get`, `promotions.verify` (`POST /promotions/{id}:verify`, people only) | `promotions.list`, `promotions.get` | `deploy.{id}` |
 | Capture and signals | Shadow, Triage queue | — | `GET /projects/{p}/samples`, `/signals` | `samples.query`, `signals.list` | `triage.new` |
 | Triage (flywheel, phase 5) | Triage queue, Diff, Audio | Accept / correct / reject | `POST /triage/{id}:accept`, `:correct`, `:reject` (built in phase 4 for pseudo-labels) | `triage.next`, `triage.``accept, triage.correct, triage.reject` | `entity.triage_item.{id}` |
 | Package corrections | Triage queue, Dataset version | Package correction batch | `POST /projects/{p}/corrections:package` | `corrections.package` | `entity.source.{id}` |

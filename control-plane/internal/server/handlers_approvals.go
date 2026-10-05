@@ -215,6 +215,9 @@ func (s *Server) replayApproved(ctx context.Context, tx pgx.Tx, a approvals.Appr
 	stop := context.AfterFunc(ctx, cancel)
 	defer stop()
 	rctx = commands.WithReplay(rctx, tx, a.ID)
+	if approver, ok := auth.FromContext(ctx); ok {
+		rctx = commands.WithReplayApprover(rctx, approver) // signed promotion records name their approver
+	}
 	rctx = policy.WithScope(rctx, a.Scope)
 	rctx = auth.WithActor(rctx, a.Actor)
 	// The replay carries the credential scope the request had: a person reaches everything, an agent or a key

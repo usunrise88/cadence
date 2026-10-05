@@ -217,10 +217,14 @@ type StartInput struct {
 	Actor     auth.Actor
 	Priority  int
 	Fresh     bool
-	// Export is set by datasets.export (internal/exports) only: a step of job kind export (dataset_export, hf_push,
-	// shar_export) runs nowhere else, so the export's licence check, golden-set check and approval cannot be skipped
-	// by naming the kind in a project pipeline.
+	// Export is set by datasets.export (internal/exports) and models.export (internal/modelexports) only: a step of
+	// job kind export (dataset_export, hf_push, shar_export; a family's model export) runs nowhere else, so the
+	// export's licence check, golden-set check and approval cannot be skipped by naming the kind in a project pipeline.
 	Export bool
+	// JobKinds runs a step as another compute job kind than its kind declares (step id → job kind): a generated
+	// pipeline's serve step runs as eval in a parity check and as benchmark in a benchmark (phase 5 · stream D1), so
+	// the queue gives it the card the way that work needs. Facades only; a pipeline file cannot set it.
+	JobKinds map[string]string
 }
 
 // Prepare reads (or takes) the pipeline and validates it for a run without writing anything; a dry run answers
@@ -441,6 +445,9 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			Params: ps.Params, Departures: ps.Departures, Wiring: ps.In, Produces: ps.Kind.Produces,
 			Resources: ps.Kind.Resources, SecretNames: ps.Kind.Secrets, EstimateSeconds: ps.EstimateSeconds,
 			Auxiliaries: ps.Auxiliaries,
+		}
+		if k := in.JobKinds[ps.Step]; k != "" {
+			row.Resources.JobKind = k
 		}
 		if row.Produces == nil {
 			row.Produces = map[string]string{}

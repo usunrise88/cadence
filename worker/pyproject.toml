@@ -39,6 +39,9 @@ dataset_export = "cadence_worker.steps.dataset_export:DatasetExportStep"
 hf_push = "cadence_worker.steps.hf_push:HfPushStep"
 noise_mine = "cadence_worker.steps.noise_mine:NoiseMineStep"
 segments_cut = "cadence_worker.steps.segments_cut:SegmentsCutStep"
+parity_score = "cadence_worker.steps.parity_score:ParityScoreStep"
+benchmark_score = "cadence_worker.steps.benchmark_score:BenchmarkScoreStep"
+shadow_score = "cadence_worker.steps.shadow_score:ShadowScoreStep"
 
 [dependency-groups]
 dev = [
@@ -101,7 +104,7 @@ plugins = ["pydantic.mypy"]
 # The NeMo pack imports its framework stack from the NeMo Speech image; the dev environment does not install it.
 [[tool.mypy.overrides]]
 module = ["nemo.*", "lightning.*", "omegaconf.*", "lhotse.*", "huggingface_hub.*", "soundfile.*", "scipy.*",
-          "transformers.*", "speechbrain.*", "grpc_tools.*", "fairseq2.*", "torchaudio.*"]
+          "transformers.*", "speechbrain.*", "grpc_tools.*", "fairseq2.*", "torchaudio.*", "onnx.*", "onnx"]
 ignore_missing_imports = true
 
 # Generated protobuf code (its .pyi stubs type the rest of the pack).
@@ -114,5 +117,6 @@ testpaths = ["tests", "packs/toy/tests", "packs/nemo/tests", "packs/services/tes
 markers = [
   "gpu: needs a CUDA card; excluded from the default run",
   "conformance: the full conformance flow of a pack (make conformance)",
+  "serving: needs a running Triton (CADENCE_TEST_TRITON_URL); excluded from the default run",
 ]
-addopts = "-m 'not gpu and not conformance' --import-mode=importlib"
+addopts = "-m 'not gpu and not conformance and not serving' --import-mode=importlib"

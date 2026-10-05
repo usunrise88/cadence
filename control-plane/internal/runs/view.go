@@ -66,7 +66,7 @@ func (s *Service) estimateView(e Estimate) EstimateView {
 		Basis: e.Basis, PlusMinus: e.PlusMinus, GPUHours: e.GPUHours, DurationSeconds: e.DurationSeconds, SecondsPerStep: e.SecondsPerStep,
 		LeaseOverhead: e.LeaseOverheadSeconds, Steps: e.Steps, GPUs: e.GPUs, Precision: e.Precision, Init: e.Init, BaseModelView: s.renderVersion(e.BaseModel),
 		Card: Card{ComputeID: e.Slot.Host.ID, Host: e.Slot.Host.Name, Index: e.Slot.Card.Index, CardClass: e.Slot.Card.CardClass,
-			MemoryCapGB: e.Slot.Card.MemoryCapGB},
+			MemoryCapGB: e.Slot.Card.TrainingCapGB()},
 		Data:   DataView{Datasets: e.Data.Datasets, Hours: e.Data.Hours, Bytes: e.Data.Bytes},
 		Source: e.Source, MeasuredAt: e.MeasuredAt, Mix: e.Mix,
 		Budget: BudgetView{GPUHoursPerProjectPerDay: e.DailyBudget, UsedTodayGPUHours: e.UsedToday,

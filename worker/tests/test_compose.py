@@ -58,3 +58,27 @@ def test_every_worker_container_outlasts_the_step_stop_grace() -> None:
             f"{name}: stop_grace_period {s['stop_grace_period']} is shorter than the step stop grace "
             f"({step_grace:g} s) plus the release margin ({RELEASE_MARGIN_SECONDS:g} s) and 10 s"
         )
+
+
+def test_the_staging_server_follows_defaults() -> None:
+    """The compose profile serving runs the image and CUDA pool defaults.yaml names, on an internal network only."""
+    if not COMPOSE.is_file():
+        pytest.skip("docker-compose.yml is not beside the worker (a copy of worker/ alone)")
+    from cadence_worker.defaults import lookup
+
+    doc = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    triton = doc["services"]["triton"]
+    assert triton["profiles"] == ["serving"]
+    assert f":-{lookup('serving.image').value}}}" in triton["image"]
+    command = " ".join(triton["command"])
+    assert f"CADENCE_TRITON_CUDA_POOL_MB:-{lookup('deploy.triton_cuda_pool_mb').value}" in command
+    assert "--model-control-mode=explicit" in command
+    assert "growable" not in command
+    assert "ports" not in triton
+    assert triton["networks"] == ["serving"]
+    assert doc["networks"]["serving"]["internal"] is True
+    assert "serving:/models:ro" in triton["volumes"]
+    worker = doc["services"]["worker"]
+    assert "serving:/var/lib/cadence/serving" in worker["volumes"]
+    assert "serving" in worker["networks"]
+    assert "serving" in doc["services"]["control-plane"]["networks"]

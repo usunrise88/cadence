@@ -29,6 +29,8 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
+	"github.com/usunrise88/cadence/control-plane/internal/delivery"
+	"github.com/usunrise88/cadence/control-plane/internal/deployments"
 	"github.com/usunrise88/cadence/control-plane/internal/drafts"
 	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -43,6 +45,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
+	"github.com/usunrise88/cadence/control-plane/internal/modelexports"
 	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
@@ -51,11 +54,14 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/policy"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects/bootstrap"
+	"github.com/usunrise88/cadence/control-plane/internal/promotions"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/runs"
 	"github.com/usunrise88/cadence/control-plane/internal/secrets"
+	"github.com/usunrise88/cadence/control-plane/internal/serving"
 	"github.com/usunrise88/cadence/control-plane/internal/sessions"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
+	"github.com/usunrise88/cadence/control-plane/internal/targets"
 	"github.com/usunrise88/cadence/control-plane/internal/transcriptions"
 	"github.com/usunrise88/cadence/control-plane/internal/triage"
 	"github.com/usunrise88/cadence/control-plane/internal/webui"
@@ -172,6 +178,18 @@ type Server struct {
 	// bundles imports project bundles; bundleWriter writes them (projects.export) (phase 4 tail).
 	bundles      *bundles.Service
 	bundleWriter *exports.ProjectWriter
+	// targets, promotions and delivery are deployment targets, signed promotion records and delivery bundles; the
+	// deliveryLinks signer mints bundle download links (phase 5 · stream D3).
+	targets       *targets.Service
+	promotions    *promotions.Service
+	delivery      *delivery.Service
+	deliveryLinks *delivery.Signer
+	// serving checks the staging targets' servers and counts the leases per served model (phase 5 · stream D2).
+	serving *serving.Service
+	// modelExports are model exports and their parity checks and benchmarks (phase 5 · stream D1).
+	modelExports *modelexports.Service
+	// deployments are shadow, canary and production deployments and their nightly shadow replays (phase 5 · D4).
+	deployments *deployments.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -245,7 +263,12 @@ func New(c Config) (*Server, error) {
 	}
 	c.Pipelines.SetMounts(s.mounts.Fingerprinter()) // what a step reads from mounts is in its input hash
 	s.annotation = s.newAnnotation()
-	s.annotation.Install(c.StepHooks) // after the dataset importer: a batch's cut becomes its golden set
+	s.annotation.Install(c.StepHooks)    // after the dataset importer: a batch's cut becomes its golden set
+	s.newModelExports()                  // model exports, parity checks, benchmarks (phase 5 · stream D1)
+	s.newDeploy()                        // deployment targets, promotion records, delivery bundles (phase 5 · stream D3)
+	s.serving = s.newServing()           // staging serving: target health, served models (phase 5 · stream D2)
+	s.transcriptions.Serving = s.serving // deployment lanes are checked against their staging target
+	s.newDeployments()                   // deployments, promotions' stages, shadow replay (phase 5 · stream D4)
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)
@@ -295,6 +318,7 @@ func (s *Server) RegisterJobs(j *jobs.Service) {
 	s.bundles.Register(j)        // bundles.adopt imports (phase 4 tail)
 	s.bundleWriter.Register(j)   // projects.export writes project bundles
 	s.media.Register(j)          // peaks of dataset versions and spectrogram tile pyramids (phase 4 tail)
+	s.delivery.Register(j)       // delivery bundles of promotion records (phase 5 · stream D3)
 }
 
 // Handler is the whole HTTP surface: /api (the contract), /mcp (the same operations as MCP tools), /git (the

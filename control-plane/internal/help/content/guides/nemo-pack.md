@@ -10,7 +10,7 @@ The NeMo pack (R40–R45) is the real training runtime: distribution `cadence-ne
 the `nemo-speech` worker image (`worker/Dockerfile`, NeMo Speech 26.07 pinned by digest: NeMo 3.0.0, PyTorch 2.12,
 Lhotse 1.33). It publishes the model family **`nemo.fastconformer-rnnt.cache-aware`** — Nemotron 3.5 streaming, a
 cache-aware FastConformer RNN-T with a language prompt, the family the seeded base model
-`base-model/nemotron-3.5-asr-streaming-0.6b` names — and five step kinds:
+`base-model/nemotron-3.5-asr-streaming-0.6b` names — and its step kinds:
 
 | Role | Step kind | Card | Does |
 | --- | --- | --- | --- |
@@ -20,6 +20,8 @@ cache-aware FastConformer RNN-T with a language prompt, the family the seeded ba
 | transcribe | [`nemotron_transcribe`](../steps/nemotron-transcribe.md) | yes | streaming decode through NeMo's cache-aware pipeline (the live decoder) at a profile, optionally phrase-boosted by a `boost_list` → `hypotheses` |
 | materialize | [`checkpoint_from_base`](../steps/checkpoint-from-base.md) | no | the base model at its pinned revision → `checkpoint` (evals of the base model) |
 | live | [`nemotron_live`](../steps/nemotron-live.md) | yes (job kind `interactive`) | serves a manual transcription session: up to three targets on the live channel, nothing stored |
+| export | [`nemotron_export`](../steps/nemotron-export.md) | yes (job kind `export`) | the checkpoint at one profile → a `deployable`: spike E1's fp32 step graph as ONNX, its TensorRT engine (TF32 off) in a Triton model directory, `deployable.json`, the smoke client (phase 5) |
+| parity | [`nemotron_parity`](../steps/nemotron-parity.md) | yes | the parity reference: the eval's decode of the parity sample with token ids, and the smoke inputs → `hypotheses`, `smoke_inputs` (phase 5) |
 
 Live sessions and evals decode with one decoder, NeMo's cache-aware streaming pipeline with the pack's shims
 (`cadence_nemo/pipeline.py`): the per-stream language prompt, the stripped locale tag, and a restore on the CPU (the
@@ -30,7 +32,7 @@ distinct model (spike A5).
 Scoring is family-neutral: the core [`wer_score`](../steps/wer-score.md) kind, in every runtime image, scores the
 `hypotheses`.
 
-The family descriptor: framework `nemo`, format `.nemo` (ONNX joins with export in phase 5), 16 kHz mono input,
+The family descriptor: framework `nemo`, formats `.nemo` and, for export (phase 5), `triton-tensorrt-cache-aware` (`exportFormats`), 16 kHz mono input,
 features computed by the model's own preprocessor (never stored), sentencepiece tokenizer (a checkpoint names the base
 model's), capabilities streaming, word timestamps, confidence, phrase boosting, language prompt, train mode `finetune`,
 and five latency profiles `80ms` [56,0] (the primary cell), `160ms` [56,1], `320ms` [56,3], `560ms` [56,6] and

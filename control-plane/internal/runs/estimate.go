@@ -150,7 +150,7 @@ func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, i
 		return Estimate{}, err
 	}
 	card := e.Slot.Card
-	cal, found, err := LatestCalibration(ctx, q, Key{BaseModel: e.BaseModel.Name, CardClass: card.CardClass, MemoryCapGB: card.MemoryCapGB, Precision: e.Precision})
+	cal, found, err := LatestCalibration(ctx, q, Key{BaseModel: e.BaseModel.Name, CardClass: card.CardClass, MemoryCapGB: card.TrainingCapGB(), Precision: e.Precision})
 	if err != nil {
 		return Estimate{}, err
 	}
@@ -163,11 +163,11 @@ func EstimateRun(ctx context.Context, q storage.Querier, d *defaults.Defaults, i
 		}
 		e.Source = "runs.calibrate at " + at.UTC().Format(time.RFC3339) + " (calibration " + cal.ArtifactHash + ")"
 	} else {
-		row, ok := d.TrainingEstimate(e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
+		row, ok := d.TrainingEstimate(e.BaseModel.Name, card.CardClass, card.TrainingCapGB(), e.Precision)
 		if !ok {
 			return Estimate{}, problems.EstimateUnavailable.New(
 				"no calibration and no row of the estimate table in defaults.yaml for %s on card class %s at %v GB in %s; calibrate on the card first (runs.calibrate)",
-				e.BaseModel.Name, card.CardClass, card.MemoryCapGB, e.Precision)
+				e.BaseModel.Name, card.CardClass, card.TrainingCapGB(), e.Precision)
 		}
 		e.SecondsPerStep, e.PlusMinus, e.Source = row.SecondsPerStep, row.PlusMinus, row.Source
 	}

@@ -1,7 +1,7 @@
 ---
 title: Diff
 summary: Reference against hypothesis for the utterance selected in an Eval report, word by word, with substitutions, deletions and insertions marked by glyph, letter and colour; Hebrew right to left.
-contexts: [panel:diff]
+contexts: [panel:diff, panel:shadow]
 ---
 
 ## What this is
@@ -24,6 +24,10 @@ so Hebrew reads right to left with Latin words and numbers intact.
 Above the alignment: the utterance's WER, substitutions, deletions, insertions, reference words, duration and
 speaker. **Show texts** gives both texts as lines; **Copy** puts them on the clipboard as `REF:` / `HYP:` lines.
 **Previous / Next** (or Alt+↑ / Alt+↓ inside the panel) step through the cell's utterances, worst first.
+
+A shadow replay's segment opens here too (the Shadow panel's **Diff**): the comparison model's transcript over the
+candidate's, aligned in the browser after the basic normalisation `shadow_score` uses (case-folded, punctuation
+stripped), with the segment's audio. It stays until the active document or its selection changes.
 
 ## Place in the loop
 

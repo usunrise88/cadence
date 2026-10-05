@@ -17,7 +17,7 @@ name: data-ingest
 description: Turn audio on a mount into a draft dataset version (freeze it with datasets.freeze)
 steps:
   - id: index
-    kind: sdp_ingest@2
+    kind: sdp_ingest@3
     params:
       source: my-corpus                                # set me: a registered source
       path: mount://corpora/my-corpus/set-me-revision  # set me: <mount>/<source>/<revision>
