@@ -118,6 +118,37 @@ def test_manifest_matches_sha256sum(tmp_path: Path) -> None:
         deploy.model_files(d)
 
 
+def test_streaming_cfg_is_what_the_serve_client_reads(tmp_path: Path) -> None:
+    """The model directory's streaming_cfg.json carries what nemotron_serve's client needs besides the geometry: the
+    tokenizer's pieces and the mel front end (stream D12: D1's export wrote neither)."""
+    from cadence_nemo import serving
+
+    pre = {"_target_": "nemo.collections.asr.modules.AudioToMelSpectrogramPreprocessor", "n_fft": 512, "features": 128}
+    geo = {
+        **GEO,
+        "chunk_size": [1, 8],
+        "pre_encode_cache_size": [0, 9],
+        "window_stride_s": 0.01,
+        "prompt_dictionary": {"sr-RS": 7, "auto": 101},
+        "blank_id": 3,
+        "vocab_size": 3,
+        "vocabulary": ["▁a", "b", "<sr-RS>"],
+        "frontend": {"kind": "nemo", "preprocessor": pre},
+    }
+    deploy.write_streaming_cfg(tmp_path / "model" / deploy.STREAMING_CFG, geo)
+    g = serving.Geometry.from_cfg(json.loads((tmp_path / "model" / deploy.STREAMING_CFG).read_text(encoding="utf-8")))
+    assert g.vocabulary == ["▁a", "b", "<sr-RS>"]
+    assert g.frontend == {"kind": "nemo", "preprocessor": pre}
+    assert g.half == 256
+    assert g.buffer_frames == 17
+    assert serving.detokenize([0, 1, 2], g.vocabulary) == "ab"
+    for drop, match in (("vocabulary", "vocabulary"), ("frontend", "front end")):
+        with pytest.raises(deploy.DeployError, match=match):
+            deploy.write_streaming_cfg(tmp_path / "x.json", {k: v for k, v in geo.items() if k != drop})
+    with pytest.raises(deploy.DeployError, match="3 pieces"):
+        deploy.write_streaming_cfg(tmp_path / "x.json", {**geo, "vocab_size": 4})
+
+
 def test_deployable_doc() -> None:
     files = [
         {"path": "1/model.plan", "sha256": "a" * 64, "bytes": 2_559_655_140},
