@@ -643,7 +643,8 @@ the card's next job by priority, no new lease starts on that card (the Queue sho
 at most `deploy.benchmark_drain_max_minutes` (30); then it yields and waits for a gap. It never preempts training: a
 person may pause the run, which saves its training state, or set a `benchmark` availability window at night.
 Processes outside Cadence (vLLM on the stand) cannot be drained, so the step samples the card's telemetry during each
-level, and a level where they used more than `deploy.benchmark_max_foreign_util_pct` (10 %) of the card is marked
+level and the card's utilisation with the model idle just before and after it (stream D12: the worker cannot tell the
+server's processes apart by PID; 07 "Open questions"), and a level where they used more than `deploy.benchmark_max_foreign_util_pct` (10 %) of the card is marked
 `contended`. A contended level at the target concurrency makes the verdict `inconclusive` (promotion needs
 `passed`); the report keeps its numbers.
 
@@ -689,9 +690,11 @@ Deployments are resolved through `transcriptions.Deployments`, which stream D4 i
 decoder would (the export's preprocessor) and sends the same buffers `nemotron_transcribe` decodes, one request per
 chunk over HTTP with binary tensors, a sequence per utterance; endpointing (a final after `stop_history_eou_ms`
 without a token), detokenisation and the locale tag stay in the client, as E1 found Эра's client must do them. Batch
-mode streams a dataset at a concurrency, paced or fast, once or for `seconds`, and writes `hypotheses` (with
-`tokens`) and `serving_timings` (per chunk: audio end, available, sent, answered; the card's telemetry each second;
-the server's statistics). The mel front end runs in the client, not as a served model (E1 left it to the builder);
+mode streams a dataset at a concurrency, paced or fast, once or for `warmup_seconds` + `seconds`, and writes
+`hypotheses` (with `tokens`) and `serving_timings` in `cadence.serving-timings/1` (03 "Artifacts": a header, a `chunk`
+row per chunk with when its audio was complete and when its tokens were back, the card's telemetry each second, the
+server's statistics over the level), which `benchmark_score@1` reads. The client reads the geometry, the tokenizer's
+pieces and the front end from `streaming_cfg.json` in the deployable's model directory (stream D12). The mel front end runs in the client, not as a served model (E1 left it to the builder);
 a served front end is a later change of the export and the client together.
 
 **Events.** `deploy.{id}` carries the deployment's stage and promotion records. `shadow.{deployment}` carries

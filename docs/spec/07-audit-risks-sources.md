@@ -941,9 +941,12 @@ owner may overrule):
       target on another card class or Triton release cannot load it: D4's promotion checks should refuse that (not only
       show it), and an engine for Эра's card needs an export on that card class (not built: one export per (version,
       profile, format)). The ONNX step graph in the deployable is the portable artifact to rebuild from.
-- [ ] P5 D1: the staging target seeded from `serving.staging_target` names Triton 26.07; the export's engine builder is
+- [x] P5 D1: the staging target seeded from `serving.staging_target` names Triton 26.07; the export's engine builder is
       26.08's (`packs.nemo.export_server_version`). The staging server must run 26.08 (E1's workarounds were measured
-      on it): stream D2 pins `serving.image` and the staging target's version.
+      on it): stream D2 pins `serving.image` and the staging target's version. Stream D12 (2026-10-05): the seed
+      (`serving.staging_target.server.version`), `serving.image`, the compose service `triton` (same digest) and the
+      export's `server_version` all say 26.08, and an engine built by `nemotron_export@1` loaded and served on that
+      image.
 - [ ] P5 D1: benchmark levels default to 1, 8, 16, 32, 64, 128 (`deploy.benchmark_streams`), up to the deployable's
       128-stream capacity (`packs.nemo.export_max_streams`), which fits the stand's 7 GB serving reserve (Triton held
       6.2 GB with the 80 ms fp32 engine loaded); E1 found 256 streams within budget, which needs a larger state pool.
@@ -952,6 +955,26 @@ owner may overrule):
 - [ ] P5 D1: a waiting benchmark drains every card that accepts benchmarks on every host (not only the card it will
       take) while it is within `deploy.benchmark_drain_max_minutes` of being queued; jobs ahead of it in start order
       (interactive sessions, higher priorities) still start. One card on the stand makes the difference moot.
+- [ ] P5 D12: a benchmark level's `foreignUtilPct` (what processes outside the server use of the card) is the card's
+      utilisation sampled for 2 s before and, after a 1.5 s settle, 2 s after the level, with the model loaded and no
+      stream of the step running (the larger): the worker cannot tell the server's processes from others by PID inside
+      its container. A foreign load that starts and stops within the level is not seen. Likewise `memoryUsedMb`, so the
+      report's `servingMemoryMb`, is the whole card's used memory (74 GB on the stand with the resident services), not
+      the server's; the model's own footprint is the serve step's load measurement (`tookMb`, 4.1 GB for the 80 ms
+      engine with a 2 GB pool).
+- [ ] P5 D12: the served text follows NeMo's text processor where it is clear (no space before closing punctuation; a
+      final that starts with it continues the previous word), but NeMo's cache-aware pipeline drops a trailing `.` the
+      model emits after the last endpoint on some utterances (18 of 49 token-identical FLEURS sr utterances), and the
+      served client keeps it. Parity compares token ids, and the scoring normalizer strips punctuation, so ΔWER is 0;
+      a normalizer that keeps punctuation would count it. Matching NeMo exactly means reproducing its segment state
+      machine in the client, or serving the text (Эра's answer to E1 question 7).
+- [ ] P5 D12: `nemotron_serve` in batch mode streams from one process (a thread per stream, precomputed features). On
+      the stand 64 real-time streams held p95 19.7 ms; E1 needed 4–8 client processes beyond about 128 streams, so the
+      higher benchmark levels (128) may measure the client's GIL as much as the server. Split the streams over
+      processes if a level's chunk latency rises while the server's own queue and compute times (`server` row) do not.
+- [ ] P5 D12: the NeMo pack's conformance run (nightly) now reaches the export, parity and benchmark stages through
+      `nemotron_serve`, which needs a staging server in its lease; the nightly image has no Triton, so those stages fail
+      there until the nightly job starts one (the compose profile `serving`) or the suite skips serve without a lease.
 
 ## Sources
 
