@@ -95,7 +95,7 @@ func draftArtifact(t *testing.T, store *cas.Store, source string, segs []seg) st
 }
 
 // draftArtifactOf is draftArtifact whose segments were cut from files: segment audio → the fixture audio of the whole
-// file, written as the segment's file-b3 fingerprint (sdp_ingest@2).
+// file, written as the segment's file-b3 fingerprint (sdp_ingest since @2).
 func draftArtifactOf(t *testing.T, store *cas.Store, source string, segs []seg, files map[string]string) steps.ArtifactRef {
 	t.Helper()
 	var lines []string

@@ -6,7 +6,7 @@ contexts: [step:sdp_ingest, artifact:segments]
 
 ## What this is
 
-`sdp_ingest@2` is a runtime-neutral core step kind (every runtime image, CPU, job kind `data`). It walks a path on a
+`sdp_ingest@3` is a runtime-neutral core step kind (every runtime image, CPU, job kind `data`). It walks a path on a
 mount, decodes every audio file (WAV in pure Python; μ-law WAV, FLAC, MP3, OGG/Opus, M4A through ffmpeg), splits a
 stereo call into one track per party, resamples each track to 16 kHz, finds speech per channel with an energy voice
 activity detector and cuts it into segments. It writes a **`segments`** artifact: where each segment lives on the
@@ -28,6 +28,12 @@ the same files from a mount by voice activity, though no segment's own hash equa
 on the path relative to `path`, fnmatch: `*` crosses `/`): a corpus's test split is where golden sets come from. Pass
 `exclude: []` to read everything; pointing `path` at a `test/` directory itself excludes nothing below it — the freeze's
 leakage check still refuses golden-set audio.
+
+**A list of files (version 3).** `files` names the exact files to read under `path` (relative paths, in that order);
+`pattern` is then ignored, while `exclude`, `max_files` and `max_hours` still apply. A listed file that does not
+exist, lies outside `path` or is not audio fails the step. The control plane uses it for a night's shadow replay: it
+walks the deployment's calls mount, picks the newest calls not replayed yet up to `deploy.shadow_replay_max_hours` and
+passes them here. Leave it `[]` (the default) to read every file `pattern` matches.
 
 **Pre-segmented corpora.** A corpus of one utterance per file (FLEURS, Common Voice) takes `segmentation: file`: each
 file stays one segment, whose hash is the hash an import of the same file gets. Version 1 cut such files at their
@@ -122,6 +128,7 @@ Files beside an audio file `<stem>.<ext>` (written by the corpus fetch scripts, 
 | `vad_pad_ms` | `data.ingest_vad_pad_ms` (100) | Cadence recommendation | 0–1000 ms |
 | `max_segment_s` | `data.ingest_max_segment_s` (20) | Cadence recommendation | 1–60 s |
 | `min_segment_s` | `data.ingest_min_segment_s` (0.3) | Cadence recommendation | 0–10 s |
+| `files` | `[]` (every file `pattern` matches) | spec 03 "Shadow replay" (phase 5) | relative paths under `path`, at most 20 000 |
 | `max_files` | `0` (all) | Cadence recommendation | ≥ 0 |
 | `max_hours` | `data.max_hours` (0 = all) | Cadence recommendation | 0–10000 h |
 
@@ -147,4 +154,5 @@ Files beside an audio file `<stem>.<ext>` (written by the corpus fetch scripts, 
 
 - docs/review/2026-10-03-phase-4-plan.md, decisions 3–4 and "Interfaces between streams" (M → D, D → X).
 - docs/spec/04-blocks.md Block 1; W3C Media Fragments URI 1.0 (`#t=`).
+- docs/spec/03-pipelines-defaults.md "Export, parity and benchmark (phase 5)", Shadow replay (`files`, version 3).
 - NVIDIA NeMo Speech Data Processor (the processor chain this step follows).

@@ -16,8 +16,10 @@ then requires the trained, averaged model to beat it on every profile, and to st
 as skipped. The base model's WER (materialize role → transcribe at the kind's default profile → score) is reported.
 
 Phase 5 adds export → parity (the parity reference and the serve role on the deployable, judged by the neutral
-``parity_score``) → benchmark (two real-time levels judged by ``benchmark_score``) for a family that maps the export,
-parity and serve roles; a family that maps fewer has them reported as skipped.
+``parity_score``) → benchmark (two real-time levels judged by ``benchmark_score``) → shadow (the served decode against
+the family's own decode of the same checkpoint over the fixtures laid out as two calls, judged by the neutral
+``shadow_score``: a faithful export does not diverge) for a family that maps the export, parity and serve roles; a
+family that maps fewer has them reported as skipped.
 
 Contracts a pack must meet beyond the schemas: the transcribe kind takes a
 ``profile`` parameter naming a latency profile; the train kind resumes from ``overrides.resumeFrom``; checkpoints carry
@@ -55,6 +57,8 @@ DEPLOY_ROLES = ("export", "parity", "serve")
 ROLE_STAND_INS = {"parity": "transcribe"}
 PARITY_SCORE_KIND = "parity_score"
 BENCHMARK_SCORE_KIND = "benchmark_score"
+SHADOW_SCORE_KIND = "shadow_score"
+SHADOW_CALLS = 2  # the fixtures are laid out as this many calls (shadow_score bootstraps by call)
 DEPLOYABLE_KEYS = ("schema", "format", "family", "profile", "weightsHash", "serving", "files", "manifestSha256")
 CHECKPOINT_META = ("family", "step", "valWer", "weightsHash")
 HYPOTHESIS_FIELDS = ("text", "words", "decoding", "decodingHash", "family", "weightsHash")
@@ -342,6 +346,58 @@ class Flow:
                 raise ConformanceError(f"{kind} consumes {name} ({typ}), which the conformance flow cannot provide")
             out[name] = available[typ]
         return out
+
+    def put_segments(self, data: ArtifactRef, calls: int = SHADOW_CALLS) -> ArtifactRef:
+        """The imported dataset as a ``cadence.segments/1`` artifact of a night's calls, as ``sdp_ingest`` would index
+        stereo recordings: every utterance one caller segment (its hash the audio hash the decodes key their rows by),
+        the utterances dealt round-robin to ``calls`` call files, laid end to end in each."""
+        files = {f.path: f.hash for f in self.store.read_manifest(data["hash"])}
+        manifest = self.store.path(files["manifest.jsonl"]).read_text(encoding="utf-8")
+        rows = [json.loads(x) for x in manifest.splitlines() if x]
+        uris = [f"mount://conformance/night/call-{c + 1}.wav" for c in range(calls)]
+        lines: list[dict[str, Any]] = []
+        ends = [0.0] * calls
+        for i, row in enumerate(rows):
+            c = i % calls
+            dur = float(row.get("duration") or 1.0)
+            start, end = ends[c], ends[c] + dur
+            ends[c] = end + 0.5
+            lines.append(
+                {
+                    "uri": f"{uris[c]}#t={start:g},{end:g}&ch=0",
+                    "file": uris[c],
+                    "hash": files[row["audio"]],
+                    "start": start,
+                    "end": end,
+                    "duration": dur,
+                    "channel": 0,
+                    "role": "caller",
+                }
+            )
+        header = {
+            "format": "cadence.segments/1",
+            "source": {"name": "conformance"},
+            "root": "mount://conformance/night",
+            "files": calls,
+            "counts": {"segments": len(lines)},
+            "roles": ["caller"],
+            "steps": ["conformance"],
+        }
+        with tempfile.TemporaryDirectory(dir=self.scratch.parent) as tmp:
+            root = Path(tmp)
+            (root / "segments.json").write_text(json.dumps(header), encoding="utf-8")
+            (root / "segments.jsonl").write_text("".join(json.dumps(x) + "\n" for x in lines), encoding="utf-8")
+            (root / "files.jsonl").write_text(
+                "".join(json.dumps({"uri": u, "duration": ends[c]}) + "\n" for c, u in enumerate(uris)),
+                encoding="utf-8",
+            )
+            stored = self.store.put_dir(root)
+        return {
+            "hash": stored.hash,
+            "type": "segments",
+            "size": stored.size,
+            "meta": {"layout": "dir", "format": "cadence.segments/1"},
+        }
 
     def read_json(self, ref: ArtifactRef) -> Any:
         return json.loads(self.store.path(ref["hash"]).read_bytes())
@@ -685,6 +741,30 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
             "p95ChunkLatencyMs": [lv["chunkLatencyMs"]["p95"] for lv in doc["levels"]],
         }
 
+    def shadow() -> dict[str, Any]:
+        """The fixtures as a night's calls: the served decode (candidate) against the family's own decode of the same
+        checkpoint (current), judged by the neutral shadow_score — a faithful export does not diverge."""
+        candidate, _ = serve(2, "fast")
+        kind = roles["transcribe"]
+        params = {**conf.get("transcribe", {}), "profile": default_profile()["name"]}
+        out, _ = flow.run(kind, params, flow.inputs_for(kind, {**available, "checkpoint": state["avg"]}))
+        current = _by_type(_expect_done(out, "transcribe (current)"), "hypotheses", "transcribe")
+        inputs = {"segments": flow.put_segments(data), "candidate": candidate, "current": current}
+        out, _ = flow.run(SHADOW_SCORE_KIND, {"bootstrap_samples": 200}, inputs)
+        rep = _by_type(_expect_done(out, SHADOW_SCORE_KIND), "shadow_report", SHADOW_SCORE_KIND)
+        doc = json.loads(flow.dir_files(rep)["report.json"].read_bytes())
+        if doc.get("schema") != "cadence.shadow/1" or doc.get("utterances") != len(refs):
+            raise ConformanceError(f"the shadow report is not cadence.shadow/1 over {len(refs)} segments: {doc}")
+        if doc["calls"] != SHADOW_CALLS or len(doc["callList"]) != SHADOW_CALLS:
+            raise ConformanceError(f"the shadow report counts {doc['calls']} calls, not {SHADOW_CALLS}")
+        div = doc["divergence"]
+        if not div["ci"][0] <= div["wer"] <= div["ci"][1]:
+            raise ConformanceError(f"the divergence {div['wer']} lies outside its interval {div['ci']}")
+        limit = float(conf.get("shadow", {}).get("maxDivergence", 0.05))
+        if div["wer"] > limit:
+            raise ConformanceError(f"the served decode diverges from the family's own by {div['wer']:.4f} WER")
+        return {"calls": doc["calls"], "utterances": doc["utterances"], "divergence": div["wer"], "ci": div["ci"]}
+
     ok = stage("calibrate", calibrate)
     ok = stage("train", train) and ok
     if ok:
@@ -701,10 +781,11 @@ def run_family(flow: Flow, fam: Family, report: Report) -> None:
                 if stage("export", export):
                     stage("parity", parity)
                     stage("benchmark", benchmark)
+                    stage("shadow", shadow)
                 return
     missing = [r for r in DEPLOY_ROLES if not roles.get(r)]
     why = f"the family maps no {', '.join(missing)} role" if missing else "the averaged checkpoint is missing"
-    for name in ("export", "parity", "benchmark"):
+    for name in ("export", "parity", "benchmark", "shadow"):
         report.stages.append(Stage(f"{prefix}/{name}", True, 0.0, {"skipped": why}))
 
 

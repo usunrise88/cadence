@@ -1,4 +1,4 @@
-"""``sdp_ingest@2`` — index audio on a mount in place (docs/review/2026-10-03-phase-4-plan.md, decision 3).
+"""``sdp_ingest@3`` — index audio on a mount in place (docs/review/2026-10-03-phase-4-plan.md, decision 3).
 
 Walks a mount path, decodes every audio file (WAV in pure Python; μ-law, FLAC, MP3, OGG/Opus, M4A through ffmpeg),
 splits stereo recordings into one track per party (roles from a ``<stem>.cadence.json`` sidecar or the
@@ -13,7 +13,9 @@ golden set's audio re-cut from a mount) — no audio is copied. ``dataset_freeze
 
 Version 2 adds ``exclude`` (a corpus's ``test/`` split is left out by default: it is where golden sets come from) and
 ``file-b3``. A pre-segmented corpus (one utterance per file, FLEURS) takes ``segmentation: file``: each file stays one
-segment whose hash is the import's. Help: docs/help/steps/sdp-ingest.md.
+segment whose hash is the import's. Version 3 adds ``files``: the exact files to read under ``path``, in order — the
+control plane's selection of a night's shadow replay (newest unreplayed calls first, phase 5 · D4). Help:
+docs/help/steps/sdp-ingest.md.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ import fnmatch
 import json
 import tempfile
 from collections.abc import Mapping
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, ClassVar, Literal
 
 import yaml
@@ -33,7 +35,7 @@ from cadence_worker import segments as seg
 from cadence_worker.protocol_gen import StepResources
 from cadence_worker.steps.base import StepInputError, cadence_field
 
-KIND = "sdp_ingest@2"
+KIND = "sdp_ingest@3"
 SIDECAR = ".cadence.json"
 SCRIPT_ORIGIN = "model:tts-script"
 
@@ -105,6 +107,15 @@ class SdpIngestParams(BaseModel):
     vad_pad_ms: int = cadence_field(default_ref="data.ingest_vad_pad_ms")
     max_segment_s: float = cadence_field(default_ref="data.ingest_max_segment_s")
     min_segment_s: float = cadence_field(default_ref="data.ingest_min_segment_s")
+    files: list[str] = cadence_field(
+        [],
+        description=(
+            "Relative paths under path to read, in this order (the control plane's selection, e.g. a night's shadow"
+            " replay: newest unreplayed calls first); [] reads every file pattern matches"
+        ),
+        source="docs/spec/03-pipelines-defaults.md Shadow replay (phase 5 · D4)",
+        range={"maxLength": 20000},
+    )
     max_files: int = cadence_field(
         0,
         description="Read at most this many files, in path order; 0 reads them all",
@@ -117,7 +128,7 @@ class SdpIngestParams(BaseModel):
 
 
 class SdpIngestStep:
-    version: ClassVar[str] = "2"
+    version: ClassVar[str] = "3"
     consumes: ClassVar[Mapping[str, str]] = {}
     produces: ClassVar[Mapping[str, str]] = {"segments": "segments"}
     resources: ClassVar[StepResources] = {"gpu": False, "gpus": 0, "jobKind": "data"}
@@ -174,6 +185,33 @@ def audio_files(root: Path, pattern: str, exclude: list[str] | None = None) -> l
         and f.suffix.lower() in seg.AUDIO_SUFFIXES
         and not any(fnmatch.fnmatchcase(f.relative_to(root).as_posix(), g) for g in skip)
     )
+
+
+def listed_files(root: Path, files: list[str], exclude: list[str] | None = None) -> list[Path]:
+    """The files named under root, in the order given, minus those exclude matches; a name outside root, a duplicate,
+    a non-audio file or one that does not exist fails the step."""
+    if not root.is_dir():
+        raise StepInputError(f"files names files under a directory, but {root} is not one on the mount")
+    skip = exclude or []
+    out: list[Path] = []
+    seen: set[str] = set()
+    for rel in files:
+        pp = PurePosixPath(rel)
+        if not rel or pp.is_absolute() or any(part in ("", ".", "..") for part in pp.parts):
+            raise StepInputError(f"files: {rel!r} is not a relative path under path")
+        key = pp.as_posix()
+        if key in seen:
+            raise StepInputError(f"files: {rel} is listed twice")
+        seen.add(key)
+        f = root / key
+        if not f.is_file():
+            raise StepInputError(f"files: {rel} does not exist under the path")
+        if f.suffix.lower() not in seg.AUDIO_SUFFIXES:
+            raise StepInputError(f"files: {rel} is not an audio file ({', '.join(seg.AUDIO_SUFFIXES)})")
+        if any(fnmatch.fnmatchcase(key, g) for g in skip):
+            continue
+        out.append(f)
+    return out
 
 
 def missing(path: str, root: Path, mount_root: Path) -> StepInputError:
@@ -248,7 +286,7 @@ def ingest(p: SdpIngestParams, out: Path, ctx: Any = None) -> dict[str, Any]:
     root = mounts.resolve(p.path, ms)
     if not root.exists():
         raise missing(p.path, root, mounts.resolve(mounts.format_uri(ref.name, ""), ms))
-    files = audio_files(root, p.pattern, p.exclude)
+    files = listed_files(root, p.files, p.exclude) if p.files else audio_files(root, p.pattern, p.exclude)
     if p.max_files:
         files = files[: p.max_files]
     if not files:
