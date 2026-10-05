@@ -11,6 +11,7 @@ import { StorageSection } from "./StorageSection";
 import { CataloguesSection } from "./CataloguesSection";
 import { ComputeSection } from "./ComputeSection";
 import { CredentialsSection } from "./CredentialsSection";
+import { DeploymentTargetsSection } from "./DeploymentTargetsSection";
 import { NotificationsSection } from "./NotificationsSection";
 import { PoliciesSection } from "./PoliciesSection";
 import { SecretsSection } from "./SecretsSection";
@@ -18,7 +19,8 @@ import { SecuritySection } from "./SecuritySection";
 
 // Settings (docs/spec/11-ui-panels.md "Panel catalogue"; admin only): registry-level configuration in sections —
 // compute, agents (the agents' model accounts), secrets, credentials, policies, notifications (the routing table,
-// quiet hours and the Telegram bot), backups, catalogues, security and the audit log.
+// quiet hours and the Telegram bot), backups, the content store, deployment targets (phase 5), catalogues, security and
+// the audit log.
 
 export const SECTIONS = [
   { id: "compute", label: "Compute", component: ComputeSection },
@@ -29,6 +31,7 @@ export const SECTIONS = [
   { id: "notifications", label: "Notifications", component: NotificationsSection },
   { id: "backups", label: "Backups", component: BackupsSection },
   { id: "storage", label: "Content store", component: StorageSection },
+  { id: "targets", label: "Deployment targets", component: DeploymentTargetsSection },
   { id: "catalogues", label: "Catalogues", component: CataloguesSection },
   { id: "security", label: "Security", component: SecuritySection },
   { id: "audit", label: "Audit log", component: AuditSection },

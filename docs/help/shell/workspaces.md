@@ -12,6 +12,10 @@ user per project, two seconds after the last change (at once when you switch wor
 layout that ends where it started is not saved again. Layout saves are preferences, so they do not appear in the
 audit log.
 
+**Ops** is the deployment workspace (block 4): Queue & GPU on the left; Chat, Approvals, Storage and Help on the
+right; [Shadow](../panels/shadow.md) and Logs at the bottom; the Model document opens in the centre from Library or a
+link, and the Shadow panel follows the deployment or Model document you open.
+
 ## Place in the loop
 
 Pick the workspace for the block you are working on.

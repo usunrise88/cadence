@@ -6,6 +6,7 @@ import type { Eval, EvalCell, EvalUtterance } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { AudioView, openAudio } from "@/shell/audio";
+import { alignTexts, useDiffSegment, type DiffSegment } from "@/shell/diff/segment";
 import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
 import {
   alignedWords,
@@ -32,6 +33,8 @@ import {
 // only channel); every word is bidi-isolated and the line runs in the golden set's direction (Hebrew right to left).
 // Previous / next step through the cell's worst utterances. The texts on request; copy puts both on the clipboard. The
 // utterance's audio view (R51) carries the hypothesis word track; Open in Audio shows it in the floating Audio panel.
+// A shadow replay's segment (phase 5, the Shadow panel) shows the same way: the comparison model's transcript over
+// this deployment's, aligned in the browser, until the active document or its selection changes.
 
 export function DiffEmpty() {
   return <EmptyState step="review" title="No utterance selected" hint="Select a cell in an Eval report, then an utterance in its table." />;
@@ -42,6 +45,8 @@ export function DiffPanel({ instanceId }: PanelProps) {
   const evalId = evalIdOfDoc(doc);
   const item = useSelection((s) => (doc ? s.selections[doc] : undefined));
   const { cellId, utterance } = parseEvalItem(item);
+  const segment = useDiffSegment((s) => s.segment);
+  if (segment) return <SegmentDiff segment={segment} />;
   if (!doc || !evalId || !cellId) return <DiffEmpty />;
   return <CellDiff doc={doc} evalId={evalId} cellId={cellId} utterance={utterance} />;
 }
@@ -181,6 +186,52 @@ function UtteranceDiff({ row, ev, cell, locale }: { row: EvalUtterance; ev: Eval
           </dd>
         </dl>
       ) : null}
+    </div>
+  );
+}
+
+function SegmentDiff({ segment }: { segment: DiffSegment }) {
+  const words = alignedWords(alignTexts(segment.ref, segment.hyp));
+  const n = { S: 0, D: 0, I: 0 };
+  for (const w of words) if (w.op !== "=") n[w.op]++;
+  return (
+    <div className="flex h-full min-h-0 flex-col" data-slot="diff-segment">
+      <PanelToolbar>
+        <span className="min-w-0 truncate text-[13px] font-medium" title={segment.label}>
+          {segment.label}
+        </span>
+        <span className="ml-auto text-xs text-muted-foreground">Shadow replay</span>
+      </PanelToolbar>
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 text-xs">
+        <dl className="flex flex-wrap gap-x-4 gap-y-1 tabular-nums" aria-label="Segment numbers">
+          {segment.wer !== undefined ? <Num label="WER" value={formatRate(segment.wer, 1)} /> : null}
+          <Num label="Substitutions" value={String(n.S)} glyph={OP_GLYPH.S} />
+          <Num label="Deletions" value={String(n.D)} glyph={OP_GLYPH.D} />
+          <Num label="Insertions" value={String(n.I)} glyph={OP_GLYPH.I} />
+          {segment.duration !== undefined ? <Num label="Duration" value={`${segment.duration.toFixed(1)} s`} /> : null}
+        </dl>
+        <Alignment words={words} dir="ltr" />
+        <p className="text-[11px] text-muted-foreground">
+          Upper line: {segment.refLabel}; lower line: {segment.hypLabel}. Case-folded, punctuation stripped.
+        </p>
+        <AudioView key={segment.audio} utterance={segment.audio} compact title={`Audio of ${segment.label}`} />
+        <div className="flex flex-wrap gap-1">
+          <Button size="xs" variant="outline" onClick={() => openAudio({ utterance: segment.audio })}>
+            <SoundHigh aria-hidden />
+            Open in Audio
+          </Button>
+        </div>
+        <dl className="grid grid-cols-[8rem_1fr] gap-x-2 gap-y-1" data-slot="diff-texts">
+          <dt className="text-muted-foreground">{segment.refLabel}</dt>
+          <dd dir="auto" className="break-words">
+            {segment.ref}
+          </dd>
+          <dt className="text-muted-foreground">{segment.hypLabel}</dt>
+          <dd dir="auto" className="break-words">
+            {segment.hyp}
+          </dd>
+        </dl>
+      </div>
     </div>
   );
 }
