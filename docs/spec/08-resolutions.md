@@ -302,6 +302,9 @@ Two retention classes. *Captured samples* (unreviewed flywheel audio): 90 days, 
 Deletion of a blob leaves a tombstone: versions that referenced it stay immutable as manifests with lineage and
 their Eval records, are marked incomplete, can't be materialised for new training, and are re-frozen without the
 member when needed.
+**Owner, 2026-10-05:** call audio is kept indefinitely, for as long as Cadence needs it: no automatic expiry for
+either class. The retention classes, tombstones and the `incomplete` flag stay as the mechanism for a deletion made
+by hand (or a later term), with the terms in `defaults.yaml` set to never; data-subject deletion stays Deferred.
 
 **R29 · PII redaction** (spec gap)
 A `pii_redact` step: regex/checksum detectors for numbers (phone, national ID, card, amounts) plus a Hebrew NER model
@@ -317,6 +320,11 @@ a training job are meaningless); shadow replay is throughput work and can share.
 control; job kind `benchmark` new (`shadow` and `export` existed); a waiting benchmark drains its card for up to 30
 minutes and never preempts training; a per-card serving reserve (7 GB of the stand's 29 GB cap) that training's
 whole-cap reservation leaves to shadow replay, served models and live sessions.*
+**Owner, 2026-10-05: the recommendation is confirmed** (`docs/review/2026-10-05-phase-5-decisions.md` R29): numbers
+by regex with checksums; names and addresses by Эра's call entities plus the resident local LLM, a Hebrew NER model
+(DictaBERT class) added only if its licence is clean and the annotated set supports it; recall ≥ 95 % on numbers and
+≥ 90 % on names and addresses per language; until a language passes, its sample text never leaves Cadence and the
+judge stays off for it.
 
 **R31 · Parity and latency thresholds** (spec gap)
 Parity: ONNX vs NeMo WER difference ≤ 0.1 absolute on the fixed 200-utterance sample (A3 acceptance) *and* ≥ 99.5 %
