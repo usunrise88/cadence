@@ -14,6 +14,8 @@ Layout of the artifact (a directory):
     model/                 serving.modelDir: a Triton model directory (config.pbtxt names no model: the directory does)
       config.pbtxt
       1/model.plan         the TensorRT engine, fp32 with TF32 off (E1: fp16 breaks parity)
+      streaming_cfg.json   the stream geometry, the tokenizer's pieces and the mel front end: what a client needs
+                           besides the server (the serve step and Эра's client read it; Triton ignores the file)
     client/transcribe      the smoke client the delivery script runs (python3, standard library only)
     onnx/step.onnx         the portable artifact: the fp32 step graph, its weights and streaming_cfg.json
     onnx/step.onnx.data
@@ -44,6 +46,7 @@ SERVER_KIND = "triton"
 MODEL_DIR = "model"
 PLAN_FILE = "1/model.plan"
 CONFIG_FILE = "config.pbtxt"
+STREAMING_CFG = "streaming_cfg.json"
 CLIENT_FILE = "client/transcribe"
 ONNX_DIR = "onnx"
 DEPLOYABLE_JSON = "deployable.json"
@@ -211,6 +214,27 @@ def state_mb_per_stream(geo: Mapping[str, Any]) -> float:
     """A stream's implicit state, in and out (FP32), in MB (10^6 bytes; E1: 6.3 MB each way at 80 ms)."""
     n = sum(math.prod(int(d) for d in dims) for dims in geo["state_shapes"].values())
     return 2 * n * FLOAT_BYTES / 1e6
+
+
+def check_client_cfg(geo: Mapping[str, Any]) -> None:
+    """What a client of the served step graph needs beyond the geometry: the tokenizer's pieces (``vocabulary``, one
+    per id below the blank) and the mel front end (``frontend``, the .nemo's preprocessor config) — the serve step
+    refuses a model directory without them."""
+    vocab = geo.get("vocabulary")
+    if not isinstance(vocab, list) or not vocab or not all(isinstance(p, str) for p in vocab):
+        raise DeployError("streaming_cfg.json needs the tokenizer's pieces by id (vocabulary)")
+    if "vocab_size" in geo and len(vocab) != int(geo["vocab_size"]):
+        raise DeployError(f"the vocabulary has {len(vocab)} pieces, the model {geo['vocab_size']}")
+    fe = geo.get("frontend")
+    if not isinstance(fe, Mapping) or fe.get("kind") != "nemo" or not isinstance(fe.get("preprocessor"), Mapping):
+        raise DeployError('streaming_cfg.json needs the front end ({"kind": "nemo", "preprocessor": {...}})')
+
+
+def write_streaming_cfg(path: Path, geo: Mapping[str, Any]) -> None:
+    """``streaming_cfg.json`` as E1 wrote it (indented, values the JSON encoder lacks as strings), once checked."""
+    check_client_cfg(geo)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(geo), indent=1, default=str) + "\n", encoding="utf-8")
 
 
 # ---------------------------------------------------------------- deployable.json

@@ -28,14 +28,13 @@ NeMo and torch are imported inside the functions: the module imports anywhere.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import time
 from pathlib import Path
 from typing import Any
 
-from cadence_nemo.deploy import STATE_ORDER
+from cadence_nemo.deploy import STATE_ORDER, STREAMING_CFG, write_streaming_cfg
 
 # Triton 26.08 confuses implicit states whose names extend one another: the served graph names them apart.
 STATE_NAMES = {
@@ -171,7 +170,8 @@ def restore(nemo: Path) -> Any:
 
 
 def geometry(model: Any, att: list[int], max_symbols: int) -> dict[str, Any]:
-    """The profile's streaming geometry, the state shapes and names, the prompt dictionary: ``streaming_cfg.json``."""
+    """The profile's streaming geometry, the state shapes and names, the prompt dictionary, and for the serve client the
+    vocabulary and the front end: ``streaming_cfg.json``."""
     from cadence_nemo.training import model_facts
 
     sc = model.encoder.streaming_cfg
@@ -200,8 +200,30 @@ def geometry(model: Any, att: list[int], max_symbols: int) -> dict[str, Any]:
         float_state=True,
         precision="fp32",
         state_io={s: list(STATE_NAMES[s]) for s in STATE_ORDER},
+        vocabulary=vocabulary(model),
+        frontend=frontend(model),
     )
     return geo
+
+
+def vocabulary(model: Any) -> list[str]:
+    """The tokenizer's pieces by id (the blank, ``vocab_size``, is not one): the serve client detokenises with them."""
+    n = int(model.decoder.vocab_size)
+    pieces = [str(p) for p in model.tokenizer.ids_to_tokens(list(range(n)))]
+    if len(pieces) != n:
+        raise RuntimeError(f"the tokenizer named {len(pieces)} pieces for a vocabulary of {n}")
+    return pieces
+
+
+def frontend(model: Any) -> dict[str, Any]:
+    """The mel front end the serve client computes (the caller sends features, D1 2026-10-05): the ``.nemo``'s
+    preprocessor config, resolved (``serving.nemo_preprocessor`` builds NeMo's module from it)."""
+    from omegaconf import OmegaConf
+
+    pre = OmegaConf.to_container(model.cfg.preprocessor, resolve=True)
+    if not isinstance(pre, dict):
+        raise RuntimeError("the model's preprocessor config is not a mapping")
+    return {"kind": "nemo", "preprocessor": {str(k): v for k, v in pre.items()}}
 
 
 def max_symbols_of(model: Any) -> int:
@@ -284,5 +306,5 @@ def export(nemo: Path, att: list[int], out: Path, scratch: Path) -> dict[str, An
     shutil.rmtree(tmp, ignore_errors=True)
     del m
     onnx.checker.check_model(str(out / "step.onnx"))
-    (out / "streaming_cfg.json").write_text(json.dumps(geo, indent=1, default=str) + "\n", encoding="utf-8")
+    write_streaming_cfg(out / STREAMING_CFG, geo)
     return geo

@@ -13,7 +13,7 @@ contexts: [step:nemotron_export, artifact:deployable, artifact:checkpoint, job-k
 | Path | What |
 | --- | --- |
 | `deployable.json` | format `triton-tensorrt-cache-aware`, family, profile, weights hash, precision `fp32`; `serving` (server `triton` and its version, `modelDir`, `memoryMb`, `cudaMemoryPoolMb`, `statePerStreamMb`, `maxStreams`, `maxBatch`, `chunkMs`, `input: features`, `engine`: TensorRT version, precision, `tf32: false`, card class, GPU, compute capability); `files` (the model directory's files with SHA-256 and bytes) and `manifestSha256` |
-| `model/config.pbtxt`, `model/1/model.plan` | the Triton model directory: the TensorRT engine and its configuration |
+| `model/config.pbtxt`, `model/1/model.plan`, `model/streaming_cfg.json` | the Triton model directory: the TensorRT engine, its configuration and what a client needs besides the server — the stream geometry, the tokenizer's pieces by id (`vocabulary`) and the mel front end (`frontend`: `{kind: nemo, preprocessor}`, the `.nemo`'s preprocessor config). [`nemotron_serve`](nemotron-serve.md) reads it there and the delivery bundle ships it; Triton ignores the file |
 | `client/transcribe` | the smoke client the delivery script runs on the production host (Python 3 standard library only) |
 | `onnx/step.onnx`, `onnx/step.onnx.data`, `onnx/streaming_cfg.json` | the portable artifact: the fp32 step graph, its weights and its geometry |
 

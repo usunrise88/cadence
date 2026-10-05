@@ -31,8 +31,10 @@ from cadence_worker.steps.base import (
     descriptor,
     missing_metadata,
 )
+from cadence_worker.steps.benchmark_score import BenchmarkScoreParams, BenchmarkScoreStep
 from cadence_worker.steps.context import Card, StepContext
 from cadence_worker.steps.dataset_import import DatasetImportParams, records, write_dataset
+from cadence_worker.steps.parity_score import ParityScoreParams, ParityScoreStep
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "serving"
 CLIPS = Path(__file__).resolve().parents[1] / "cadence_nemo" / "fixtures"
@@ -290,6 +292,20 @@ def test_text_and_words() -> None:
         [0, 1, 2, 3, 4], [(0.0, 0.08), (0.08, 0.16), (0.16, 0.24), (0.24, 0.32), (0.32, 0.4)], vocab
     )
     assert words == [{"word": "hello", "start": 0.0, "end": 0.16}, {"word": "world", "start": 0.16, "end": 0.32}]
+    # Nemotron's pieces (D12, FLEURS sr through the served engine): a bare ▁ starts a word, closing punctuation joins
+    # the word before it, also across finals.
+    v = ["▁bio", "▁", "je", "▁problem", ".", "▁", "<hr-HR>", "▁prim", ","]
+    t = [(0.0, 0.1)] * 7
+    assert serving.detokenize([0, 1, 2, 3, 4, 5, 6], v) == "bio je problem."
+    assert [w["word"] for w in serving.words_of([0, 1, 2, 3, 4, 5, 6], t, v)] == ["bio", "je", "problem."]
+    assert serving.detokenize([5, 4, 5, 6], v) == "."
+    finals = [{"text": "vidi primjer"}, {"text": "."}, {"text": "dalje"}]
+    assert serving.join_text(finals) == "vidi primjer. dalje"
+    assert [w["word"] for w in serving.join_words([{"word": "primjer"}, {"word": "."}, {"word": "dalje"}])] == [
+        "primjer.",
+        "dalje",
+    ]
+    assert serving.tighten("a , b ( c ) d") == "a, b ( c) d"
 
 
 def test_ensure_loaded_refuses_a_model_over_its_reservation(fake: FakeTriton) -> None:
@@ -328,6 +344,10 @@ def test_kind_descriptor() -> None:
     assert p.mode == "batch"
     assert p.load_timeout_s == 300
     assert p.over_cap_slack_mb == 512
+    assert p.warmup_seconds == 5  # deploy.benchmark_warmup_seconds
+    # The parameters the control plane sets on a serve step (modelexports serveKind.params) are all declared.
+    props = d["params"]["properties"]
+    assert {"target", "profile", "concurrency", "pace", "seconds", "warmup_seconds", "target_lang"} <= set(props)
     assert FAMILY.descriptor["roles"]["serve"] == "nemotron_serve"
 
 
@@ -365,27 +385,128 @@ def test_batch_fast(tmp_path: Path, fake: FakeTriton, monkeypatch: pytest.Monkey
         assert row["decoding"]["targetLang"] == "he-IL"
         assert row["partials"]
         assert row["partials"][-1]["text"] == row["text"]
-    level = lines[-1]
-    assert level["type"] == "level"
-    assert level["concurrency"] == 2
-    assert level["utterances"] == 3
-    assert level["errors"] == 0
-    assert level["server"] == {"kind": "triton", "version": "26.08"}
-    utt = [x for x in lines if x["type"] == "utterance"]
-    assert {u["stream"] for u in utt} == {0, 1}
-    assert all(len(c) == 4 for u in utt for c in u["chunks"])
+    header, server = lines[0], lines[-1]
+    assert header["schema"] == "cadence.serving-timings/1"
+    assert header["concurrency"] == 2
+    assert header["utterances"] == 3
+    assert header["errors"] == 0
+    assert header["warmupMs"] == 0  # a single pass counts everything
+    assert header["server"] == {"kind": "triton", "version": "26.08"}
+    assert header["model"] == "cadence-0123456789abcdef"
+    assert header["chunkMs"] == 80
+    assert server["type"] == "server"
+    assert server["inferences"] == sum(len(r["steps"]) for r in rows)
+    chunks = [x for x in lines if x.get("type") == "chunk"]
+    assert {c["stream"] for c in chunks} == {0, 1}
+    assert len(chunks) == sum(len(r["steps"]) for r in rows)
+    assert sum(c["last"] for c in chunks) == 3
+    assert all(c["doneMs"] >= c["sentMs"] >= c["availableMs"] - 1 for c in chunks)
     meta = [e for e in events if e.get("e") == "meta"]
     assert any(m["output"] == "hypotheses" and m["meta"]["concurrency"] == 2 for m in meta)
+    assert any(m["output"] == "serving_timings" and m["meta"]["schema"] == "cadence.serving-timings/1" for m in meta)
 
 
 def test_batch_realtime_paces_chunks(tmp_path: Path, fake: FakeTriton, monkeypatch: pytest.MonkeyPatch) -> None:
     _, lines, _ = run_batch(tmp_path, fake, monkeypatch, pace="realtime", concurrency=3)
-    for u in (x for x in lines if x["type"] == "utterance"):
-        avail = [c[1] for c in u["chunks"]]
-        sent = [c[2] for c in u["chunks"]]
+    by_utt: dict[tuple[int, str], list[dict[str, Any]]] = {}
+    for c in (x for x in lines if x.get("type") == "chunk"):
+        by_utt.setdefault((c["stream"], c["audio"]), []).append(c)
+    assert len(by_utt) == 3
+    for cs in by_utt.values():
         # A chunk leaves when its audio has arrived: never before, and the audio arrives at real time.
-        assert all(s >= a - 1 for a, s in zip(avail, sent, strict=True))
-        assert avail[-1] - avail[0] >= u["chunks"][-1][0] - u["chunks"][0][0] - 50
+        assert all(c["sentMs"] >= c["availableMs"] - 1 for c in cs)
+        assert cs[-1]["availableMs"] - cs[0]["availableMs"] >= cs[-1]["audioMs"] - cs[0]["audioMs"] - 50
+    # Streams start spread over one chunk, as calls do.
+    firsts = sorted(min(c["availableMs"] for c in cs) for cs in by_utt.values())
+    assert firsts[-1] - firsts[0] >= 30
+
+
+def test_a_timed_level_counts_after_its_warmup(
+    tmp_path: Path, fake: FakeTriton, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rows, lines, _ = run_batch(tmp_path, fake, monkeypatch, pace="fast", concurrency=2, seconds=0.6, warmup_seconds=0.3)
+    header = lines[0]
+    assert header["seconds"] == 0.6
+    assert header["warmupMs"] == 300
+    assert header["wallSeconds"] >= 0.9
+    assert 1 <= len(rows) <= 3  # each utterance's first complete decode, of those the streams reached
+    chunks = [x for x in lines if x.get("type") == "chunk"]
+    assert any(c["availableMs"] < 300 for c in chunks)
+    assert any(c["availableMs"] >= 300 for c in chunks)
+
+
+def test_the_judges_read_what_the_serve_step_writes(
+    tmp_path: Path, fake: FakeTriton, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The contract between nemotron_serve and the neutral judges, on its own output (not the toy's): parity_score@1
+    compares its hypotheses' tokens with a reference decode, benchmark_score@1 reads its serving_timings per level."""
+    (tmp_path / "parity").mkdir()
+    served, _, _ = run_batch(tmp_path / "parity", fake, monkeypatch, pace="fast", concurrency=2)
+    reference = [dict(r) for r in served]
+    reference[0]["tokens"] = [*reference[0]["tokens"], 7]
+    ref_path = tmp_path / "reference.jsonl"
+    ref_path.write_text("".join(json.dumps(r) + "\n" for r in reference), encoding="utf-8")
+    norm = tmp_path / "norm.json"
+    norm.write_text(
+        json.dumps(
+            {
+                "versionId": "ver_n",
+                "locale": "*",
+                "unicode": "NFKC",
+                "casefold": True,
+                "punctuation": "strip",
+                "removeMarks": False,
+                "mappings": [],
+                "numbers": "keep",
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = tmp_path / "report"
+    ParityScoreStep().run(
+        ParityScoreParams(),
+        {
+            "reference": ref_path,
+            "served": tmp_path / "parity" / "hyp.jsonl",
+            "data": tmp_path / "parity" / "dataset",
+            "normalizer": norm,
+        },
+        {"report": report},
+        StepContext(lambda e: None, work_dir=tmp_path),
+    )
+    doc = json.loads((report / "report.json").read_text(encoding="utf-8"))
+    assert doc["compared"] == "tokens"
+    assert doc["utterances"] == 3
+    assert doc["identical"] == 2
+    assert doc["werDelta"] == 0
+    assert doc["disagreement"] == 0
+    assert doc["verdict"] == "failed"  # 2/3 identical is below the share
+    timings: dict[str, Path] = {}
+    for i, n in enumerate((1, 2)):
+        d = tmp_path / f"level-{n}"
+        d.mkdir()
+        run_batch(d, fake, monkeypatch, pace="fast", concurrency=n, seconds=0.4, warmup_seconds=0.1)
+        timings[f"timings.{i}"] = d / "timings.jsonl"
+    bench = tmp_path / "benchmark.json"
+    BenchmarkScoreStep().run(
+        BenchmarkScoreParams(target_streams=2),
+        timings,
+        {"report": bench},
+        StepContext(lambda e: None, work_dir=tmp_path),
+    )
+    rep = json.loads(bench.read_text(encoding="utf-8"))
+    assert [lv["streams"] for lv in rep["levels"]] == [1, 2]
+    for lv in rep["levels"]:
+        assert lv["chunks"] > 0
+        assert lv["finals"] > 0
+        assert lv["errors"] == 0
+        assert lv["chunkLatencyMs"]["p95"] is not None
+        assert lv["server"]["inferences"] >= lv["chunks"]
+    assert rep["chunkMs"] == 80
+    assert rep["profile"] == "80ms"
+    assert rep["server"] == {"kind": "triton", "version": "26.08"}
+    assert rep["model"] == "cadence-0123456789abcdef"
+    assert rep["verdict"] == "passed"
 
 
 def test_relay_lanes_are_served_streams(tmp_path: Path, fake: FakeTriton) -> None:

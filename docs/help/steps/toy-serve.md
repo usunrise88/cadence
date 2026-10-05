@@ -30,7 +30,7 @@ a toy model version.
 | `concurrency` | 1 | The serve role's parameters | 1–1024 |
 | `pace` | `fast` | The serve role's parameters | `fast`, `realtime` |
 | `seconds` | 0 (every utterance once) | Cadence recommendation | 0–3600 |
-| `warmup_seconds` | 0 | Cadence recommendation | 0–120 |
+| `warmup_seconds` | 0; only with `seconds` > 0 (the level lasts warm-up + `seconds`, as `nemotron_serve`'s) | Cadence recommendation | 0–120 |
 
 ## Commands
 

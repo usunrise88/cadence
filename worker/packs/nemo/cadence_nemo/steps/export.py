@@ -1,8 +1,9 @@
 """nemotron_export — the export role of the Nemotron family (phase 5 · stream D1; R46, spike E1): a checkpoint at one
 latency profile becomes a ``deployable`` (``cadence.deployable/1``, :mod:`cadence_nemo.deploy`): spike E1's fp32 step
 graph as ONNX (the portable artifact), the TensorRT engine built from it on the leased card with the TensorRT of the
-target server (fp32, TF32 off), the Triton model directory around the engine, ``deployable.json`` with SHA-256 per
-file and the manifest hash the delivery script checks, and the smoke client.
+target server (fp32, TF32 off), the Triton model directory around the engine (with ``streaming_cfg.json``: the
+geometry, the tokenizer's pieces and the mel front end a client needs), ``deployable.json`` with SHA-256 per file and
+the manifest hash the delivery script checks, and the smoke client.
 
 The ONNX export runs on the CPU (about 45 s and 5 GB of RAM per profile); ``trtexec`` builds the engine on the card
 (E1: 33 s, 2.4 GB of TensorRT allocations for the 80 ms graph). An engine is specific to the GPU and the TensorRT
@@ -147,6 +148,9 @@ class ExportStep:
         except deploy.DeployError as e:
             raise StepInputError(str(e)) from e
         (model_dir / deploy.CONFIG_FILE).write_text(config, encoding="utf-8")
+        # The model directory is self-contained: the serve step and the delivery bundle read the client's geometry,
+        # vocabulary and front end beside the engine.
+        deploy.write_streaming_cfg(model_dir / deploy.STREAMING_CFG, geo)
         write_client(out)
         engine = {
             "kind": "tensorrt",

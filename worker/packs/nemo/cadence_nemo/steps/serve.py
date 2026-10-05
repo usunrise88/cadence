@@ -7,9 +7,11 @@ checks its memory against the reservation, and then:
 
 - **batch** (parity, benchmark, shadow replay): streams every utterance of the ``data`` input at ``concurrency``
   concurrent streams, at real-time pace (a chunk is sent when its audio has arrived) or as fast as the server answers,
-  for one pass or for ``seconds`` (each stream cycling through the utterances). It writes ``hypotheses`` (one row per
-  utterance, its first complete decode, with the token ids the parity check compares) and ``serving_timings`` (per
-  chunk: audio end, available, sent and answered; the level's card telemetry and the server's counters);
+  for one pass or for ``warmup_seconds`` + ``seconds`` (each stream cycling through the utterances: a benchmark
+  level). It writes ``hypotheses`` (one row per utterance, its first complete decode, with the token ids the parity
+  check compares) and ``serving_timings`` (``cadence.serving-timings/1``, what ``benchmark_score`` reads: a header,
+  a ``chunk`` row per chunk with the moment its audio was complete and the moment its tokens were back, the card's
+  ``telemetry`` once a second, the server's own counters and the streams' errors);
 - **relay** (a transcription session whose targets are deployments, R47): serves the live channel like
   ``nemotron_live``, every lane a stream of the served model.
 
@@ -26,6 +28,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, ClassVar, Literal
 
@@ -44,6 +47,11 @@ from cadence_worker.steps.context import StepContext
 from cadence_worker.telemetry import Telemetry
 
 SERVE_SOURCE = 'docs/spec/06-platform.md "Staging serving"; docs/spikes/E1-onnx-triton.md'
+TIMINGS_SCHEMA = "cadence.serving-timings/1"
+# How long the card's utilisation is sampled before and after a level, with the model loaded and no stream of this
+# step running: what processes outside the server use (benchmark_score's contention check, foreignUtilPct).
+FOREIGN_SAMPLE_S = 2.0
+FOREIGN_SETTLE_S = 1.5
 
 
 class ServeParams(live.LiveParams):
@@ -72,10 +80,15 @@ class ServeParams(live.LiveParams):
     )
     seconds: float = cadence_field(
         0.0,
-        description="Batch mode: stream for this long, each stream cycling through the utterances; 0 decodes every "
-        "utterance once",
+        description="Batch mode: stream for this long after the warm-up, each stream cycling through the utterances; "
+        "0 decodes every utterance once",
         source="R31 (deploy.benchmark_seconds_per_level)",
         range={"min": 0, "max": 3600},
+    )
+    warmup_seconds: float = cadence_field(
+        default_ref="deploy.benchmark_warmup_seconds",
+        description="Batch mode with seconds > 0: stream this long first; its chunks are timed but not counted "
+        "(serving_timings warmupMs). A single pass (seconds 0) counts everything",
     )
     partials: bool = cadence_field(
         True,
@@ -120,9 +133,14 @@ class Level:
 
     rows: dict[int, dict[str, Any]] = field(default_factory=dict)
     lines: list[dict[str, Any]] = field(default_factory=list)
+    utterances: int = 0
     audio_s: float = 0.0
     errors: list[str] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
+
+
+def ms(t: float, t_zero: float) -> float:
+    return round((t - t_zero) * 1000, 2)
 
 
 def stream_clips(
@@ -137,8 +155,16 @@ def stream_clips(
     until: float | None,
     partials: bool,
     row_of: Callable[[Clip, serving.ServedStream, list[dict[str, Any]], list[list[float]]], dict[str, Any]],
+    offset: float = 0.0,
 ) -> None:
-    """One stream: its clips one after another, one server sequence each, paced from ``t_zero`` (perf_counter)."""
+    """One stream: its clips one after another, one server sequence each, paced from ``t_zero`` (perf_counter) and
+    starting ``offset`` seconds after it (streams at real-time pace start spread over one chunk, as calls do).
+
+    Every chunk becomes a ``chunk`` row of ``cadence.serving-timings/1``: ``availableMs`` is when its audio was
+    complete (real-time pace) or when it could be sent (fast: the stream's previous answer was back), ``doneMs`` when
+    its tokens were back, both from ``t_zero``; ``last`` marks an utterance's last chunk (its time to final)."""
+    if offset > 0:
+        time.sleep(offset)
     i = 0
     while True:
         if until is None and i >= len(order):
@@ -153,11 +179,12 @@ def stream_clips(
         start = time.perf_counter()
         avail = start
         chunks: list[list[float]] = []
+        rows: list[dict[str, Any]] = []
         events: list[dict[str, Any]] = []
         parts: list[dict[str, Any]] = []
         audio_ms = 0.0
         try:
-            for ch in clip.chunks:
+            for k, ch in enumerate(clip.chunks):
                 avail += ch.real / serving.SR
                 audio_ms += ch.real / serving.SR * 1000
                 now = time.perf_counter()
@@ -167,13 +194,19 @@ def stream_clips(
                 ev, _ = s.send(ch)
                 done = time.perf_counter()
                 ref = avail if pace == "realtime" else sent
-                chunks.append(
-                    [
-                        round(audio_ms, 1),
-                        round((ref - t_zero) * 1000, 2),
-                        round((sent - t_zero) * 1000, 2),
-                        round((done - t_zero) * 1000, 2),
-                    ]
+                chunks.append([round(audio_ms, 1), ms(ref, t_zero), ms(sent, t_zero), ms(done, t_zero)])
+                rows.append(
+                    {
+                        "type": "chunk",
+                        "stream": sid,
+                        "audio": clip.audio_hash,
+                        "index": k,
+                        "audioMs": round(audio_ms, 1),
+                        "availableMs": ms(ref, t_zero),
+                        "sentMs": ms(sent, t_zero),
+                        "doneMs": ms(done, t_zero),
+                        "last": k == len(clip.chunks) - 1,
+                    }
                 )
                 events += ev
                 if partials:
@@ -188,42 +221,101 @@ def stream_clips(
                     ]
             events.append(s.final("end"))
         except Exception as e:
+            msg = f"{type(e).__name__}: {e}"[:500]
             with level.lock:
-                level.errors.append(f"{type(e).__name__}: {e}"[:500])
+                level.errors.append(msg)
+                level.lines += rows
+                level.lines.append(
+                    {
+                        "type": "error",
+                        "stream": sid,
+                        "audio": clip.audio_hash,
+                        "atMs": ms(time.perf_counter(), t_zero),
+                        "message": msg,
+                    }
+                )
             if until is None:
                 raise
             continue
         finals = [e for e in events if e["type"] == "final"]
-        line = {
-            "type": "utterance",
-            "stream": sid,
-            "audio": clip.audio_hash,
-            "chunks": chunks,
-            "finalAvailMs": chunks[-1][1] if chunks else None,
-            "finalDoneMs": chunks[-1][3] if chunks else None,
-        }
         with level.lock:
-            level.lines.append(line)
+            level.lines += rows
+            level.utterances += 1
             level.audio_s += clip.seconds
             if ci not in level.rows:
                 level.rows[ci] = row_of(clip, s, finals, chunks) | ({"partials": parts} if partials else {})
 
 
+def card_utilization(index: int | None, seconds: float, every: float = 0.2, settle: float = 0.0) -> float | None:
+    """The card's mean utilisation in % over ``seconds``, after ``settle`` seconds (the driver's utilisation covers
+    the last sample period: right after a level it still counts the level's tail). None when the card has no
+    telemetry."""
+    if index is None or seconds <= 0:
+        return None
+    time.sleep(settle)
+    tel = Telemetry()
+    vals: list[float] = []
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        for c in tel.cards():
+            if c.get("index") == index and c.get("utilization") is not None:
+                vals.append(float(c["utilization"]) * 100)
+        time.sleep(every)
+    return round(sum(vals) / len(vals), 2) if vals else None
+
+
 def sample_telemetry(level: Level, index: int | None, stop: threading.Event, t_zero: float, every: float = 1.0) -> None:
-    """The card's telemetry during the level, once a second (the benchmark's contention check reads it)."""
+    """The card's telemetry during the level, once a second: ``utilizationPct`` and ``memoryUsedMb`` (the whole
+    card's); ``foreignUtilPct`` is filled in after the level (:func:`foreign_util`)."""
     tel = Telemetry()
     while not stop.wait(every):
         for c in tel.cards():
             if index is not None and c.get("index") == index:
+                util = c.get("utilization")
                 with level.lock:
                     level.lines.append(
                         {
                             "type": "telemetry",
-                            "tMs": round((time.perf_counter() - t_zero) * 1000),
-                            "utilization": c.get("utilization"),
+                            "atMs": ms(time.perf_counter(), t_zero),
+                            "utilizationPct": round(float(util) * 100, 1) if util is not None else None,
                             "memoryUsedMb": c.get("memoryUsedMb"),
+                            "foreignUtilPct": None,
                         }
                     )
+
+
+def foreign_util(before: float | None, after: float | None) -> float | None:
+    """What processes outside the server used of the card: its utilisation with the model loaded and idle, sampled
+    before and after the level (the larger). Per-process utilisation is not used: the worker cannot tell the server's
+    processes from others by PID inside its container."""
+    vals = [v for v in (before, after) if v is not None]
+    return max(vals) if vals else None
+
+
+def stats_delta(before: Mapping[str, Any], after: Mapping[str, Any]) -> dict[str, Any]:
+    """The server's own counters over the level (Triton's model statistics): inferences, executions (so the mean
+    batch) and the mean queue and compute time per inference."""
+
+    def n(d: Mapping[str, Any], *path: str) -> float:
+        v: Any = d
+        for p in path:
+            v = v.get(p) if isinstance(v, Mapping) else None
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    inf = n(after, "inference_count") - n(before, "inference_count")
+    exe = n(after, "execution_count") - n(before, "execution_count")
+    out: dict[str, Any] = {"inferences": int(inf), "executions": int(exe)}
+    if exe > 0:
+        out["meanBatch"] = round(inf / exe, 2)
+    for key, name in (("queue", "queueMs"), ("compute_infer", "computeMs")):
+        c = n(after, "inference_stats", key, "count") - n(before, "inference_stats", key, "count")
+        t = n(after, "inference_stats", key, "ns") - n(before, "inference_stats", key, "ns")
+        if c > 0:
+            out[name] = round(t / c / 1e6, 3)
+    return out
 
 
 class ServeStep:
@@ -367,7 +459,7 @@ class ServeStep:
         def row_of(
             clip: Clip, s: serving.ServedStream, finals: list[dict[str, Any]], chunks: list[list[float]]
         ) -> dict[str, Any]:
-            words = [w for f in finals for w in f.get("words") or []]
+            words = serving.join_words([w for f in finals for w in f.get("words") or []])
             return {
                 "audio": clip.audio_hash,
                 "text": serving.join_text(finals),
@@ -397,16 +489,22 @@ class ServeStep:
             )
 
         n = len(clips)
-        conc = min(p.concurrency, n) if p.seconds <= 0 else p.concurrency
+        timed = p.seconds > 0
+        conc = p.concurrency if timed else min(p.concurrency, n)
+        warmup = p.warmup_seconds if timed else 0.0
         level = Level()
+        # What the card does outside the server, with the model loaded and none of this level's streams running.
+        foreign: dict[str, float | None] = {"before": card_utilization(index, FOREIGN_SAMPLE_S), "after": None}
         before = control.stats(model)
+        started = datetime.now(UTC)
         t_zero = time.perf_counter()
-        until = t_zero + p.seconds if p.seconds > 0 else None
+        until = t_zero + warmup + p.seconds if timed else None
         stop = threading.Event()
         sampler = threading.Thread(target=sample_telemetry, args=(level, index, stop, t_zero), daemon=True)
         sampler.start()
         threads: list[threading.Thread] = []
         failures: list[BaseException] = []
+        spread = geo.chunk_ms / 1000 if p.pace == "realtime" else 0.0
 
         def run_stream(sid: int) -> None:
             order = list(range(sid, n, conc)) if until is None else [(sid * 7 + k) % n for k in range(n)]
@@ -422,6 +520,7 @@ class ServeStep:
                     until=until,
                     partials=p.partials,
                     row_of=row_of,
+                    offset=spread * sid / conc,
                 )
             except BaseException as e:
                 failures.append(e)
@@ -434,9 +533,13 @@ class ServeStep:
         while any(th.is_alive() for th in threads):
             for th in threads:
                 th.join(timeout=1.0)
-            with level.lock:
-                done = len(level.rows)
-            ctx.progress(0.1 + 0.85 * min(1.0, done / n), f"{done}/{n} utterances")
+            if timed:
+                frac = min(1.0, (time.perf_counter() - t_zero) / max(1e-6, warmup + p.seconds))
+                ctx.progress(0.1 + 0.85 * frac, f"{level.utterances} utterances at {conc} streams")
+            else:
+                with level.lock:
+                    done = len(level.rows)
+                ctx.progress(0.1 + 0.85 * min(1.0, done / n), f"{done}/{n} utterances")
         stop.set()
         sampler.join(timeout=2.0)
         for cl in clients:
@@ -445,31 +548,46 @@ class ServeStep:
             raise failures[0]
         wall = time.perf_counter() - t_zero
         after = control.stats(model)
+        if timed:
+            foreign["after"] = card_utilization(index, FOREIGN_SAMPLE_S, settle=FOREIGN_SETTLE_S)
+        fg = foreign_util(foreign["before"], foreign["after"])
+        for ln in level.lines:
+            if ln.get("type") == "telemetry":
+                ln["foreignUtilPct"] = fg
         missing = n - len(level.rows)
         if until is None and missing:
             raise StepInputError(f"{missing} utterances were not decoded")
-        summary = {
-            "type": "level",
-            "concurrency": conc,
-            "pace": p.pace,
-            "seconds": round(wall, 2),
-            "utterances": len(level.lines),
-            "audioS": round(level.audio_s, 2),
-            "errors": len(level.errors),
-            "firstErrors": level.errors[:5],
-            "model": model,
-            "target": lease.target,
-            "server": {"kind": lease.server, "version": lease.server_version},
+        header = {
+            "schema": TIMINGS_SCHEMA,
             "profile": dep.profile,
             "chunkMs": geo.chunk_ms,
-            "serverStats": {"before": before, "after": after},
+            "concurrency": conc,
+            "pace": p.pace,
+            "seconds": p.seconds,
+            "warmupMs": round(warmup * 1000, 1),
+            "target": lease.target,
+            "server": {"kind": lease.server, "version": lease.server_version},
+            "cardClass": dep.card_class,
+            "model": model,
+            "startedAt": started.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "clock": "wall",
+            "wallSeconds": round(wall, 2),
+            "utterances": level.utterances,
+            "audioS": round(level.audio_s, 2),
+            "errors": len(level.errors),
+            "foreignUtil": {
+                "basis": "the card's utilisation before and after the level, the model loaded and idle",
+                "beforePct": foreign["before"],
+                "afterPct": foreign["after"],
+            },
         }
+        server_row = {"type": "server", "model": model, **stats_delta(before, after), "before": before, "after": after}
         with outputs["hypotheses"].open("w", encoding="utf-8") as f:
             for ci in sorted(level.rows):
                 f.write(json.dumps(level.rows[ci], ensure_ascii=False, separators=(",", ":")) + "\n")
         with outputs["serving_timings"].open("w", encoding="utf-8") as f:
-            for line in [*level.lines, summary]:
-                f.write(json.dumps(line, separators=(",", ":")) + "\n")
+            for line in [header, *level.lines, server_row]:
+                f.write(json.dumps(line, ensure_ascii=False, separators=(",", ":")) + "\n")
         meta = {
             "family": NAME,
             "profile": dep.profile,
@@ -484,15 +602,29 @@ class ServeStep:
             "server": f"{lease.server} {lease.server_version}",
         }
         ctx.set_meta("hypotheses", meta)
-        ctx.set_meta("serving_timings", meta | {"seconds": summary["seconds"], "errors": summary["errors"]})
-        lat = [c[3] - c[1] for ln in level.lines if ln.get("type") == "utterance" for c in ln["chunks"]]
+        ctx.set_meta(
+            "serving_timings",
+            meta
+            | {
+                "schema": TIMINGS_SCHEMA,
+                "seconds": p.seconds,
+                "warmupMs": header["warmupMs"],
+                "errors": len(level.errors),
+            },
+        )
+        warm_ms = header["warmupMs"]
+        lat = [
+            ln["doneMs"] - ln["availableMs"]
+            for ln in level.lines
+            if ln.get("type") == "chunk" and ln["availableMs"] >= warm_ms
+        ]
         if lat:
             ctx.metric("chunk_latency_p95_ms", float(np.percentile(np.asarray(lat), 95)))
         ctx.log(
             "served",
-            utterances=len(level.rows),
+            utterances=level.utterances,
             streams=conc,
             pace=p.pace,
-            seconds=summary["seconds"],
-            errors=summary["errors"],
+            seconds=round(wall, 2),
+            errors=len(level.errors),
         )

@@ -32,18 +32,40 @@ does not list the deployable's family, format or profile — comes as `CADENCE_S
    locale tag happen in the client, as Эра's client must do them.
 
 **Batch mode** streams every utterance of the `data` input at `concurrency` streams, at real-time pace (a chunk
-leaves when its audio has arrived) or as fast as the server answers, once — or for `seconds`, each stream cycling
-through the utterances (a benchmark level). It writes:
+leaves when its audio has arrived; the streams start spread over one chunk, as calls do) or as fast as the server
+answers, once — or, a benchmark level, for `warmup_seconds` + `seconds`, each stream cycling through the utterances.
+It writes:
 
-- `hypotheses`: one row per utterance, its first complete decode, with `tokens` (the parity check compares them),
+- `hypotheses`: one row per utterance, its first complete decode, with `tokens` (every non-blank token id of the
+  stream, the locale tag included: what [`parity_score`](parity-score.md) compares with the parity reference's),
   words timed by the chunks that emitted them, partials and per-chunk `steps`;
-- `serving_timings`: per utterance and chunk `[audio end ms, available ms, sent ms, answered ms]` from the level's
-  start, the card's telemetry once a second, and a `level` line with the concurrency, errors and the server's own
-  counters before and after.
+- `serving_timings` (`cadence.serving-timings/1`, what [`benchmark_score`](benchmark-score.md) reads): a header
+  (`profile`, `chunkMs`, `concurrency`, `pace`, `seconds`, `warmupMs` — 0 for a single pass —, `target`, `server`,
+  `cardClass` of the engine, `model`, `startedAt`, and the level's wall time, utterances and errors), one `chunk` row
+  per chunk (`stream`, `audio`, `index`, `availableMs` — when its audio was complete, or at fast pace when it could
+  be sent —, `sentMs`, `doneMs`, `last`), the card's `telemetry` once a second (`utilizationPct`, `memoryUsedMb` of
+  the whole card, `foreignUtilPct`), a `server` row with Triton's counters over the level (inferences, executions,
+  mean batch, queue and compute ms) and an `error` row per failed stream utterance.
+
+`foreignUtilPct` is the card's utilisation sampled for 2 s before and (after a 1.5 s settle) 2 s after the level with
+the model loaded and no stream running (the larger of the two): the worker cannot tell the server's processes from others by PID inside its
+container, so a load that starts and stops within the level is not seen.
 
 **Relay mode** (`mode: relay`, set by `transcriptions.new` for deployment targets, job kind `interactive`) serves the
 live channel like [`nemotron_live`](nemotron-live.md); every lane is a stream of a served model and no model is
 loaded on the worker's own card.
+
+### Measured (staging card, 2026-10-05, stream D12)
+
+The base model exported by [`nemotron_export`](nemotron-export.md) at 80 ms (TensorRT 11.2.1, fp32, B 1–64), loaded
+by this step into a Triton 26.08 with a 2 GB CUDA pool (the load took 4.1 GB of the card), on the first 50 FLEURS sr
+test utterances by file name (decoded under the `hr-HR` prompt), beside the resident services (about 67.5 GB held,
+idle):
+
+| What | Value |
+| --- | --- |
+| Parity against [`nemotron_parity`](nemotron-parity.md), served at 8 streams, fast | 49/50 identical token sequences, ΔWER 0.000 points (both 38.65 %), disagreement 0.0010 — passed |
+| Benchmark, real time, 5 s warm-up + 30 s per level: p95 chunk latency at 1 / 16 / 64 streams | 8.1 / 15.6 / 19.6 ms (p95 time to final 8.0 / 17.8 / 22.6 ms; mean batch 1.0 / 1.4 / 4.8) — passed at 64 |
 
 ## Place in the loop
 
@@ -60,6 +82,7 @@ deployment's nightly replay, and manual tests of a deployment.
 | `pace` | `realtime` | R47 | `realtime`, `fast` |
 | `profile` | the deployable's | — | an export is one profile |
 | `seconds` | 0 (every utterance once) | R31 (`deploy.benchmark_seconds_per_level`) | 0–3600 |
+| `warmup_seconds` | `deploy.benchmark_warmup_seconds` (5); only with `seconds` > 0 | Spike E1 | 0–120 |
 | `partials` | true | — | — |
 | `target_lang` | `packs.nemo.target_lang` (each clip's language) | — | — |
 | `stop_history_eou_ms` | `packs.nemo.live_stop_history_eou_ms` (800) | Spike A5 | 80–10 000 ms |
@@ -70,7 +93,8 @@ Inputs: `deployable` (`deployable`), `data` (`dataset`, batch mode), `audio` (a 
 the served model's (`serving.model_memory_gb`, 9 GB, unless the deployable states one), from the card's serving
 reserve; leases of the same model on a card share it.
 
-What the deployable's `streaming_cfg.json` must hold (the export writes it, spike E1): `chunk_size`,
+What the deployable's `streaming_cfg.json` (in the model directory, beside `config.pbtxt`; written by
+[`nemotron_export`](nemotron-export.md)) must hold: `chunk_size`,
 `pre_encode_cache_size`, `buffer_frames`, `n_mels`, `window_stride_s`, `sample_rate`, `chunk_ms`,
 `prompt_dictionary`, `blank_id`, `valid_out_len`, `max_symbols`, and for the client `vocabulary` (the tokenizer's
 pieces by id) and `frontend` (`{"kind": "nemo", "preprocessor": {…}}`).
