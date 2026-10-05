@@ -472,16 +472,17 @@ Pipeline engine changes in phase 4 (`internal/pipelines`):
 ### Export, parity and benchmark (phase 5)
 
 _Specified 2026-10-05 (R30, R31, R46; entities and operations in 02 "Deployment entities"). A3 measured the first
-numbers (`docs/spikes/A3-nemotron-finetune.md` steps 4–5); spike E1 replaces them where marked **TBD spike E1**._
+numbers (`docs/spikes/A3-nemotron-finetune.md` steps 4–5); spike E1 (`docs/spikes/E1-onnx-triton.md`) replaced them,
+and stream D1 built export, parity and benchmark on its design (2026-10-05; decision log in 00)._
 
 **Family roles.** Phase 5 fills three roles the family descriptor already lists (R41), so Go and the web stay
 neutral:
 
 | Role | Consumes → produces | The Nemotron family's kind (NeMo pack) |
 | --- | --- | --- |
-| `export` | `checkpoint` → `deployable` (one per latency profile) | `nemotron_export@1`: the prompt-aware export A3 proved (`encoder_prompt.onnx` with the prompt kernel and `prompt_index` input, `decoder_joint.onnx`, opset 17, one graph per profile because the attention context is baked in, `streaming_cfg.json` with the profile's geometry), plus the Triton model directory (R46: a family meant for Эра brings its repository builder). Precision fp32 in A3; fp16/TensorRT and device-resident caches per **TBD spike E1** |
-| `serve` | `deployable` + `dataset` → `hypotheses` (+ `serving_timings`) | `nemotron_serve@1`: a streaming client of a target's server. It feeds 16 kHz audio in the profile's chunks at real-time pace or as fast as the server allows, at a given concurrency; it writes partial events with emit times, finals with token ids, and per-chunk and per-final timings. Where the mel front end runs (client as in A3, or served) is **TBD spike E1** |
-| `parity reference` | `checkpoint` + `dataset` → `hypotheses` | `nemotron_transcribe` at batch 1 with the export's settings (`pad_and_drop_preencoded: true`, A3 step 4), writing token ids |
+| `export` | `checkpoint` → `deployable` (one per latency profile) | `nemotron_export@1` (job kind `export`, on a card), format `triton-tensorrt-cache-aware`: E1's *step graph* — one call is one chunk of B streams, encoder caches, prediction-network state and last token in and out, with the four changes to NeMo's export (the prompt kernel in the graph, the pre-encoded frame drop per row from `start`, the state reset in the graph on `start`, greedy RNN-T unrolled to the model's `max_symbols`, 10) — exported fp32 as ONNX on the CPU (`onnx/`, the portable artifact, ≈ 40 s); the TensorRT engine `trtexec` builds from it on the leased card with the staging server's TensorRT (Triton 26.08 → TensorRT 11.2.1, fp32 `--noTF32`, one profile B = 1..`max_batch` 64, ≈ 30 s, 2.4 GB); the Triton model directory (`config.pbtxt` with the oldest sequence batcher, `start` as CONTROL_SEQUENCE_START, six FP32 implicit states named apart with zero initial state, never `use_growable_memory`, no `name`); `deployable.json`; the smoke client (`client/transcribe`). An engine is specific to the GPU and the TensorRT version: `serving.engine` records both (07 "Open questions") |
+| `serve` | `deployable` + `dataset` → `hypotheses` (with `tokens`) + `serving_timings` | `nemotron_serve@1` (stream D2): a streaming client of a target's server with parameters `target`, `profile`, `concurrency`, `pace` (`fast` \| `realtime`), `seconds` and `warmup_seconds` (a benchmark level's length and its uncounted start), and the decode language. **The caller sends features** (decided by D1, 2026-10-05): the client computes the pipeline decoder's feature buffers (`cadence_nemo.pipeline` `Features` + `_chunks`) and sends them; no featuriser is served in v1 (07 "Open questions": the next item). The toy pack's `toy_serve@1` is the same contract in process |
+| `parity reference` (role `parity`) | `checkpoint` + `dataset` → `hypotheses` (with `tokens`) + `smoke_inputs` | `nemotron_parity@1`: exactly `nemotron_transcribe@4`'s decode (the eval's batch 8, fp32 at matmul precision "highest") with each utterance's token ids (the greedy hypothesis on the stream's last step, locale tag included), and for the first 20 utterances the feature buffers it sends (`cadence.nemo-chunks/1`), which become the delivery bundle's smoke set |
 
 The steps that judge are neutral core kinds (CPU, every runtime): `parity_score@1` (two `hypotheses` → `parity_report`)
 and `benchmark_score@1` (`serving_timings` per level → `benchmark_report`); `shadow_score@1` serves shadow replay
@@ -491,10 +492,11 @@ and `benchmark_score@1` (`serving_timings` per level → `benchmark_report`); `s
 
 | Type | Holds |
 | --- | --- |
-| `deployable` | `cadence.deployable/1`: `deployable.json` (`format`, `family`, `profile`, `weightsHash`, `serving: {server: {kind, minVersion}, modelDir, memoryMb, maxStreams, sampleRate, chunkMs, boost: {static, dynamic}}`, `files: [{path, sha256, bytes}]`, `manifestSha256`) and the files. SHA-256 beside the store's BLAKE3, because a production host checks it with standard tools |
-| `serving_timings` | JSON lines per stream: chunk send and result times, utterance end and final times (audio offsets and wall clock), the level's concurrency, and the card telemetry sampled during the level (Cadence's and foreign utilisation) |
-| `parity_report` | `cadence.parity/1`: the sample (golden set version, utterance hashes, selection rule), both WERs after the golden set's normalizer, `werDelta`, `identicalShare`, `compared: tokens|text`, the differing utterances with both texts, the thresholds and the verdict |
-| `benchmark_report` | `cadence.benchmark/1`: per level `{streams, chunkLatencyMs: {p50, p95, p99}, timeToFinalMs: {p50, p95, p99}, rtf, servingMemoryMb, foreignUtilPct}`, `budgetMs`, `targetStreams`, `maxStreamsWithinBudget`, `contended`, card class, server version, verdict |
+| `deployable` | `cadence.deployable/1`, a directory: `deployable.json` (`schema`, `format`, `family`, `profile`, `weightsHash`, `precision`, `serving: {server: {kind, version, minVersion}, modelDir, memoryMb, cudaMemoryPoolMb, statePerStreamMb, maxStreams, maxBatch, sampleRate, chunkMs, boost: {static, dynamic}, engine: {kind, version, precision, tf32, cardClass, gpu, computeCapability}, input: features\|audio}`, `smoke: {client, input}`, `files: [{path, sha256, bytes}]` of the model directory relative to `modelDir`, `manifestSha256` = SHA-256 of the sorted `"<sha256>  <path>\n"` lines, D3's `delivery.ManifestSHA256`), the model directory, the smoke client and, for Nemotron, `onnx/`. SHA-256 beside the store's BLAKE3, because a production host checks it with standard tools. Nemotron at 80 ms: a 2.56 GB engine, `memoryMb` 6474 for 128 streams (engine + 12.6 MB state per stream + 2.3 GB overhead); Triton held 6.2 GB with it loaded |
+| `smoke_inputs` | `cadence.smoke-inputs/1`, a directory: `smoke.json` `{format, items: [{audio, file}]}` and one file per item in the family's smoke client's input format (Nemotron: `cadence.nemo-chunks/1`, the feature buffers base64 float32); written by the parity reference, copied into the parity report |
+| `serving_timings` | `cadence.serving-timings/1`, JSON lines: a header (`profile`, `chunkMs`, `concurrency`, `pace`, `seconds`, `warmupMs`, `target`, `server`, `cardClass`, `model`, `startedAt`), then rows `chunk` (`stream`, `audio`, `index`, `availableMs` — when the chunk's audio was complete —, `doneMs`, `last`), `telemetry` (`utilizationPct`, `memoryUsedMb`, `foreignUtilPct`), `server` (the server's own counters) and `error` |
+| `parity_report` | `cadence.parity/1`, a directory: `report.json` (`utterances`, `compared: tokens\|text`, `identical`, `identicalShare`, both WERs after the golden set's normalizer, `werDelta`, `disagreement`, the thresholds, `verdict`, `reasons`, up to 200 differing utterances with both texts and token ids, `smoke.items: [{name, audio, file, expected}]`) and `smoke/` (the smoke inputs; `expected` is the served token ids joined by spaces, else the served text). The control plane adds the sample (golden set version, sample dataset, selection) on the check |
+| `benchmark_report` | `cadence.benchmark/1`: per level `{streams, chunks, finals, chunkLatencyMs: {p50, p95, p99}, timeToFinalMs: {p50, p95, p99}, rtf, errors, servingMemoryMb, foreignUtilPct, contended, withinBudget}`, `budgetMs`, `targetStreams`, `maxStreamsWithinBudget`, `contended`, card class, server, verdict, reasons |
 | `shadow_report` | `cadence.shadow/1`: one night's replay: calls and hours, per segment the two texts, confidences and their WER, the summary divergence with its bootstrap interval (resampled by call, R54) |
 | `delivery` | `cadence.delivery/1`: the bundle of a promotion record (02 "Promotion records") |
 
@@ -502,29 +504,38 @@ and `benchmark_score@1` (`serving_timings` per level → `benchmark_report`); `s
 
 | Pipeline | Steps (job kind) | Hook |
 | --- | --- | --- |
-| `export` | the family's `export` kind, one step per profile (`export`) | `deployable` → `model_exports` row `exported` |
-| `parity` | `parity reference` (`eval`) ‖ `serve` through the staging target at concurrency 1 (`eval`) → `parity_score@1` (CPU) | `parity_report` → the export's `parity` |
-| `benchmark` | `serve` at each level of `deploy.benchmark_streams` in turn (`benchmark`) → `benchmark_score@1` (CPU) | `benchmark_report` → the export's `benchmarks[]` |
+| `model-export` | the family's `export` kind, one step `export-<profile>` per profile (`export`; the engine is built for the staging target's `cardClass` and server version) | `deployable` → `model_exports` row `exported` |
+| `model-parity` | `reference`: the `parity` role (`eval`) ‖ `served`: `serve` through the staging target at `deploy.parity_concurrency` (8, the eval's batch), pace `fast` (run as `eval`) → `score`: `parity_score@1` (CPU) | `parity_report` → the export's `parity` |
+| `model-benchmark` | `level-<n>`: `serve` at each level of `deploy.benchmark_streams` plus the target's concurrency, pace `realtime`, `deploy.benchmark_seconds_per_level` after a `deploy.benchmark_warmup_seconds` warm-up (run as `benchmark`) → `score`: `benchmark_score@1` over `timings.0..n` (CPU) | `benchmark_report` → the export's `benchmarks[]` |
 | `shadow-replay` | `sdp_ingest` over the night's calls (`data`) → `serve` the deployment's export ‖ `serve` the comparison model (`shadow`) → `shadow_score@1` (CPU) | `shadow_report` → the deployment's `shadow` |
 
 **Parity (R31).** The sample is fixed: the first `deploy.parity_sample_utterances` (200) utterances by utterance hash
 of the golden set named (default: the first target golden set of the project's `gates.yaml`), so every export of
-every model is compared on the same audio. Both sides decode at the export's profile. The served side runs through the
-staging target's server, not a standalone runtime: A3 found the served path the stronger check, and an ONNX
-Runtime on the CPU took 12–27 s per clip. Pass: `|WER(served) − WER(reference)| ≤ deploy.parity_max_wer_delta` (0.001,
-i.e. 0.1 WER points absolute, as A3's acceptance) **and** identical token sequences on ≥
-`deploy.parity_min_identical_share` (0.995) of the utterances. Token ids are compared when both sides carry them,
-otherwise the exact text after NFC (as A3 compared), and the report says which. A3: 0.00 points and 199/200 at 80 ms
-and 160 ms, which is exactly at the edge of 0.995; **TBD spike E1** for the fp16/TensorRT path.
+every model is compared on the same audio; the control plane writes the sample as a dataset artifact over the same
+audio blobs (`first-by-audio-hash`), and the decode language is the one the model's gating eval used for that golden
+set. Both sides decode at the export's profile, at the eval's batch, TF32 off: the reference with the family's own
+decoder, the served side through the staging target's server with the export's engine (the engine that will be
+served, not only its ONNX file: E1 found precision decided at engine build). Pass, all three:
+`|WER(served) − WER(reference)| ≤ deploy.parity_max_wer_delta` (0.001, i.e. 0.1 WER points absolute, A3's acceptance);
+identical token sequences on ≥ `deploy.parity_min_identical_share` (**0.97**, owner to confirm; was 0.995) of the
+utterances; word disagreement — the served transcripts scored with the reference's as the reference — ≤
+`deploy.parity_max_disagreement` (0.005). Token ids are compared when both sides carry them, otherwise the exact text
+after NFC, and the report says which. Spike E1 (80 ms, 200 FLEURS sr clips): NeMo against itself (batch 8 / batch 1)
+98.5 %; ONNX fp32 TF32 off 99.0 %, TF32 on 96.0 %; served TensorRT fp32 99.0 % and Δ 0.000; fp16 76 % and +0.10 points
+(refused). On the stand the served fp32 engine returned NeMo's tokens on 20/20 smoke utterances (stream D1).
 
-**Latency budget (R31).** The benchmark streams the parity sample's audio at real-time pace, one stream per utterance
-in turn, at each level of `deploy.benchmark_streams` (1, 4, 8, 16, 32, 64), for `deploy.benchmark_seconds_per_level`
-(120). Time to final is measured from sending an utterance's last chunk to receiving its final. Pass: p95 time to
-final at the profile ≤ the profile's chunk + `deploy.latency_budget_over_chunk_ms` (100), so 180 ms at `80ms`, at
-the target's `concurrency` (`deploy.target_concurrency`, 32, a placeholder until Эра's peak is known). The report also
-gives chunk latency, RTF and the most streams within the budget (the "streams per card" of Block 4). A3 (fp32 ORT on
-CUDA, Python BLS): p95 chunk latency 56.6 ms at 1 stream and 867 ms at 32; it saturated at about 2.2 real-time
-streams, so it passes at 1 stream and fails at 32. **TBD spike E1** for the serving design phase 5 builds.
+**Latency budget (R31).** The benchmark streams the parity sample's audio at real-time pace, each stream playing its
+utterances one after another, at each level of `deploy.benchmark_streams` (1, 8, 16, 32, 64, 128; the target's
+concurrency is added) for `deploy.benchmark_seconds_per_level` (120) after `deploy.benchmark_warmup_seconds` (5).
+A chunk's latency runs from the moment its audio is complete to its result; an utterance's last chunk gives its time to
+final. Pass (E1's reading of R31's "time to final ≤ chunk + 100 ms": a word waits up to one chunk for it to fill):
+**p95 chunk latency ≤ `deploy.latency_budget_over_chunk_ms` (100)** at the target's `concurrency`
+(`deploy.target_concurrency`, 32, a placeholder until Эра's peak is known); a level where processes outside Cadence
+used more than `deploy.benchmark_max_foreign_util_pct` of the card is contended, and a contended verdict level makes
+the verdict `inconclusive`. The report gives chunk latency, time to final, RTF and **`maxStreamsWithinBudget`**, the
+streams per card of Block 4 — a measured output, not a default. E1 (TensorRT fp32, 80 ms, beside idle residents):
+p95 19.5 ms at 32 streams and 63 ms at 256, saturated at 288; fp16 57 ms at 512; ONNX Runtime's CUDA provider
+saturates below 8 streams, and A3's Python BLS design at about 2.
 
 **Shadow replay.** A shadow deployment replays the night's call recordings from its `replay` mount at
 `deploy.shadow_replay_at` (02:00 in `policies.timezone`), newest unreplayed calls first, up to
@@ -542,19 +553,23 @@ description, a source and a range, as in the file:
 
 ```yaml
 deploy:
-  export_profiles: { value: [primary], description: Latency profiles models.export writes when the request names none (primary = eval.primary_profile), source: "R43; one graph per profile (A3 step 4)" }
-  parity_sample_utterances: { value: 200, unit: utterances, range: { min: 50, max: 2000 }, description: Utterances of the parity sample (the first by utterance hash of the golden set), source: "R31; A3 acceptance (200 clips)" }
-  parity_max_wer_delta: { value: 0.001, unit: fraction, range: { min: 0, max: 0.01 }, description: "Largest |WER(served) − WER(reference)| on the sample; 0.001 = 0.1 WER points absolute", source: "R31; A3 acceptance ('within 0.1 point'), measured 0.00" }
-  parity_min_identical_share: { value: 0.995, unit: fraction, range: { min: 0.9, max: 1 }, description: Share of sample utterances whose token sequences (else NFC text) must be identical; also the delivery script's smoke check, source: "R31; A3 measured 199/200" }
-  latency_budget_over_chunk_ms: { value: 100, unit: ms, range: { min: 0, max: 1000 }, description: "p95 time to final may exceed the profile's chunk by this much at the target concurrency (180 ms at 80ms)", source: R31 }
+  export_profiles: { value: [primary], description: Latency profiles models.export writes when the request names none (primary = eval.primary_profile), source: "R43; one graph per profile (E1 step 1)" }
+  export_seconds: { value: 300, unit: s, range: { min: 30, max: 7200 }, description: Estimate of one export step (graph on the CPU, engine on the card), source: "E1: 42 s graph + 33 s engine at 80 ms" }
+  parity_sample_utterances: { value: 200, unit: utterances, range: { min: 20, max: 2000 }, description: Utterances of the parity sample (the first by audio hash of the golden set), source: "R31; A3 and E1 acceptance (200 clips)" }
+  parity_concurrency: { value: 8, unit: streams, range: { min: 1, max: 64 }, description: Streams the served side of parity decodes at once (the eval's batch), source: "E1 proposal 1" }
+  parity_max_wer_delta: { value: 0.001, unit: fraction, range: { min: 0, max: 0.01 }, description: "Largest |WER(served) − WER(reference)|; 0.001 = 0.1 WER points absolute", source: "R31; A3 acceptance; E1 measured 0.000 at 80 and 160 ms" }
+  parity_min_identical_share: { value: 0.97, unit: fraction, range: { min: 0.9, max: 1 }, description: Share of utterances with identical token sequences (else NFC text); also the delivery script's smoke check, source: "E1 proposal 1 (owner to confirm): NeMo against itself 0.985" }
+  parity_max_disagreement: { value: 0.005, unit: fraction, range: { min: 0, max: 0.1 }, description: Word errors of the served transcripts against the reference's, per reference word, source: "E1 proposal 1: fp32 ≤ 0.0033, fp16 0.017" }
+  latency_budget_over_chunk_ms: { value: 100, unit: ms, range: { min: 0, max: 1000 }, description: "p95 latency of a chunk's result after its audio is complete, at the target concurrency (a word waits at most chunk + this)", source: "R31, read by E1" }
   target_concurrency: { value: 32, unit: streams, range: { min: 1, max: 512 }, description: Concurrent streams the latency budget must hold at when the target names none, source: "R31 · confirm: placeholder until Эра's peak concurrent calls per card are known" }
-  benchmark_streams: { value: [1, 4, 8, 16, 32, 64], description: Concurrency levels a benchmark runs in turn, source: "A3 step 5 levels; 64 is the sequence batcher's largest batch" }
+  benchmark_streams: { value: [1, 8, 16, 32, 64, 128], description: Concurrency levels a benchmark streams in turn (the target's concurrency is added), source: "E1 levels; 128 is the deployable's default stream capacity" }
   benchmark_seconds_per_level: { value: 120, unit: s, range: { min: 30, max: 1800 }, description: How long each level streams at real-time pace, source: Cadence recommendation }
-  benchmark_max_foreign_util_pct: { value: 10, unit: "%", range: { min: 0, max: 100 }, description: "A level is marked contended when processes outside Cadence used more of the card than this", source: "Cadence recommendation (R30: numbers beside other load are meaningless)" }
-  benchmark_drain_max_minutes: { value: 30, unit: min, range: { min: 0, max: 240 }, description: Longest a waiting benchmark keeps new leases off its card before it yields, source: Cadence recommendation }
+  benchmark_warmup_seconds: { value: 5, unit: s, range: { min: 0, max: 120 }, description: The start of every level that is not counted, source: "E1 (5 s warm-up)" }
+  benchmark_max_foreign_util_pct: { value: 10, unit: "%", range: { min: 0, max: 100 }, description: "A level is marked contended when processes outside Cadence used more of the card than this", source: "Cadence recommendation (R30)" }
+  benchmark_drain_max_minutes: { value: 30, unit: min, range: { min: 0, max: 240 }, description: Longest a waiting benchmark keeps new leases off the cards that accept benchmarks before it yields, source: Cadence recommendation }
   shadow_min_hours: { value: 20, unit: h, range: { min: 1, max: 1000 }, description: Hours of replayed call audio a shadow deployment needs before a canary, source: "03 Key defaults (Cadence recommendation)" }
   shadow_replay_at: { value: "02:00", description: Local time (policies.timezone) the nightly shadow replay starts, source: Cadence recommendation }
-  shadow_replay_max_hours: { value: 4, unit: h, range: { min: 0.5, max: 24 }, description: Most call audio one night's replay takes per shadow deployment, source: "Cadence recommendation; TBD spike E1 (serving throughput)" }
+  shadow_replay_max_hours: { value: 4, unit: h, range: { min: 0.5, max: 24 }, description: Most call audio one night's replay takes per shadow deployment, source: "Cadence recommendation; E1: RTF 0.18 per stream at 32 streams, so 4 h replay in minutes" }
   shadow_artifact_retention_days: { value: 90, unit: days, range: { min: 1, max: 3650 }, description: Days a night's shadow texts are kept (production-derived; the summary stays), source: "R28 · confirm (captured-sample class)" }
   canary_share: { value: 0.05, unit: fraction, range: { min: 0.01, max: 0.5 }, description: Traffic share a canary promotion asks for when the request names none, source: Cadence recommendation }
   delivery_pending_days: { value: 7, unit: days, range: { min: 1, max: 60 }, description: A promotion without a receipt is withdrawn after this long, source: Cadence recommendation }
@@ -624,9 +639,9 @@ Rules:
 | Text style | Punctuated, cased, spoken-form numbers; per-locale normalizer (ivrit.ai normalizer for he-IL) | NVIDIA guide; ivrit.ai leaderboard |
 | Golden set | ≥ 2 h stratified telephone sample from own calls plus the locale's FLEURS split | Cadence recommendation |
 | Gate | Target golden sets must beat the baseline at the primary cell (`gate.target_rule` `beat-baseline`); replay golden sets may regress ≤ 0.5 absolute points (`gate.replay_max_regression` 0.005); deletions may not fall while insertions rise (`gate.deletions_insertions`); a project departs from these in `gates.yaml` (04 "Block 3") | Cadence recommendation |
-| Parity (R31) | ONNX against NeMo on a fixed 200-utterance sample of the first target golden set (`deploy.parity_sample_utterances`): WER difference ≤ 0.1 points absolute (`deploy.parity_max_wer_delta` 0.001) and ≥ 99.5 % identical token sequences (`deploy.parity_min_identical_share` 0.995) | R31; A3 acceptance (≤ 0.1 point) and its measurement (0.00 points, 199/200 at 80 and 160 ms) |
-| Latency budget (R31) | p95 time to final at the primary profile ≤ chunk + 100 ms (`deploy.latency_budget_over_chunk_ms`), 180 ms at `80ms`, at the target's concurrency (`deploy.target_concurrency` 32); benchmark levels 1, 4, 8, 16, 32, 64 streams × 120 s (`deploy.benchmark_streams`, `deploy.benchmark_seconds_per_level`); a level is `contended` when processes outside Cadence use > 10 % of the card (`deploy.benchmark_max_foreign_util_pct`) | R31; **confirm**: the concurrency is a placeholder until Эра's peak is known; A3 levels plus 64 (the sequence batcher's maximum batch); the contention bound is a Cadence recommendation |
-| Shadow before canary | ≥ 20 h of replayed calls (`deploy.shadow_min_hours`), replayed nightly at 02:00, ≤ 4 h of call audio a night (`deploy.shadow_replay_at`, `deploy.shadow_replay_max_hours`) | Cadence recommendation; the nightly cap **TBD spike E1** (serving throughput) |
+| Parity (R31) | The served engine against the family's own decoder, both at the eval's batch with TF32 off, on a fixed 200-utterance sample (first by audio hash) of the first target golden set (`deploy.parity_sample_utterances`): WER difference ≤ 0.1 points absolute (`deploy.parity_max_wer_delta` 0.001), ≥ 97 % identical token sequences (`deploy.parity_min_identical_share` 0.97) and word disagreement ≤ 0.005 (`deploy.parity_max_disagreement`) | R31; A3 acceptance (≤ 0.1 point); spike E1 (NeMo against itself 98.5 %, fp32 exports 96–99 %, fp16 76 %) — the 0.97 and the disagreement bound **confirm** (owner) |
+| Latency budget (R31) | p95 chunk latency from audio availability ≤ 100 ms (`deploy.latency_budget_over_chunk_ms`: a word waits at most chunk + 100 ms) at the target's concurrency (`deploy.target_concurrency` 32); benchmark levels 1, 8, 16, 32, 64, 128 streams (plus the target's) × 120 s after a 5 s warm-up (`deploy.benchmark_streams`, `deploy.benchmark_seconds_per_level`, `deploy.benchmark_warmup_seconds`); a level is `contended` when processes outside Cadence use > 10 % of the card (`deploy.benchmark_max_foreign_util_pct`); streams per card is measured (`maxStreamsWithinBudget`) | R31 read by spike E1 (fp32 TensorRT at 80 ms: p95 20 ms at 32 streams, 63 ms at 256); **confirm**: the concurrency is a placeholder until Эра's peak is known; the contention bound is a Cadence recommendation |
+| Shadow before canary | ≥ 20 h of replayed calls (`deploy.shadow_min_hours`), replayed nightly at 02:00, ≤ 4 h of call audio a night (`deploy.shadow_replay_at`, `deploy.shadow_replay_max_hours`) | Cadence recommendation; E1's serving throughput (RTF 0.18 per stream at 32 streams) replays 4 h in minutes |
 | Canary and delivery | Canary traffic share 5 % (`deploy.canary_share`, 0.01–0.5); a promotion without a receipt is withdrawn after 7 days (`deploy.delivery_pending_days`) | Cadence recommendation (07 "Open questions") |
 | Staging serving (R30) | Triton 26.07 as the compose profile `serving`; a served model reserves 7 GB (`serving.model_memory_gb`) out of the card's serving reserve (Compute `servingReserveGb`: 7 on the stand, whose cap is 29 GB, so training keeps its 22 GB); idle models unload after 30 min (`serving.unload_idle_minutes`); benchmarks take the card alone (06 "Staging serving") | A3 (Triton peaked at 6.3 GB, fp32, 32 streams; image `nvcr.io/nvidia/tritonserver:26.07-py3`); R30; **TBD spike E1** |
 | Sampling policy | 10% of calls plus every low-confidence utterance | Cadence recommendation |

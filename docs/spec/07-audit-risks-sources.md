@@ -920,6 +920,38 @@ owner may overrule):
 - [ ] P5 spec: the instance signing key is created with the first delivery target. A lost key means a new chain
       (a `key-rotation` record needs the old key) and re-pinning on the production host; a leaked key is revoked by
       re-pinning. Neither case is automated.
+- [ ] P5 D1 (owner to confirm): parity's identical share is 0.97, not R31's 0.995, plus a word-disagreement bound
+      0.005 (`deploy.parity_min_identical_share`, `deploy.parity_max_disagreement`; Δ WER stays ≤ 0.1 points). Spike E1:
+      NeMo's own decoder agrees with itself on 98.5 % of the 200 clips between batch 8 and batch 1, fp32 exports 96–99 %,
+      fp16 76 % (disagreement fp32 ≤ 0.0033, fp16 0.017). The same share sets the delivery smoke check: ⌈0.97 × 20⌉ = 20,
+      so every smoke utterance must still match. The stand's served fp32 engine matched NeMo's tokens on 20/20 smoke
+      utterances (2026-10-05).
+- [ ] P5 D1: the deployable serves spike E1's step graph and **the caller sends features** (the pipeline decoder's
+      feature buffers): no featuriser is served in v1. Parity therefore compares engines on identical buffers; a
+      production front end that does not reproduce `cadence_nemo.pipeline.Features` exactly (whole-stream log-mel) can
+      give other finals, and parity does not measure that. Endpointing, detokenisation and locale-tag stripping stay in
+      the caller too (E1). Next item: a stateful featuriser model before the step graph in the Triton repository
+      (implicit state: two frames of audio and the pre-encode cache), with parity run from audio; it also lets the smoke
+      set carry WAVs instead of feature files (≈ 2 MB of JSON per utterance today). Эра's answer to "tokens or text,
+      endpointing in the client or in a Cadence-built gateway" (E1 question 7) decides its shape.
+- [ ] P5 D1: a TensorRT engine runs only on the GPU architecture and the TensorRT it was built with. The export builds
+      it on the staging card with the TensorRT of the staging server's Triton (the worker image carries `trtexec` and its
+      libraries from `nvcr.io/nvidia/tritonserver:26.08-py3`, pinned by digest; Triton 26.08 → TensorRT 11.2.1), and
+      records `serving.engine` (TensorRT version, card class, GPU name, compute capability) in the deployable. A delivery
+      target on another card class or Triton release cannot load it: D4's promotion checks should refuse that (not only
+      show it), and an engine for Эра's card needs an export on that card class (not built: one export per (version,
+      profile, format)). The ONNX step graph in the deployable is the portable artifact to rebuild from.
+- [ ] P5 D1: the staging target seeded from `serving.staging_target` names Triton 26.07; the export's engine builder is
+      26.08's (`packs.nemo.export_server_version`). The staging server must run 26.08 (E1's workarounds were measured
+      on it): stream D2 pins `serving.image` and the staging target's version.
+- [ ] P5 D1: benchmark levels default to 1, 8, 16, 32, 64, 128 (`deploy.benchmark_streams`), up to the deployable's
+      128-stream capacity (`packs.nemo.export_max_streams`), which fits the stand's 7 GB serving reserve (Triton held
+      6.2 GB with the 80 ms fp32 engine loaded); E1 found 256 streams within budget, which needs a larger state pool.
+      The verdict reads p95 chunk latency from audio availability (E1's reading of R31's "time to final ≤ chunk + 100
+      ms"); time to final is reported beside it.
+- [ ] P5 D1: a waiting benchmark drains every card that accepts benchmarks on every host (not only the card it will
+      take) while it is within `deploy.benchmark_drain_max_minutes` of being queued; jobs ahead of it in start order
+      (interactive sessions, higher priorities) still start. One card on the stand makes the difference moot.
 
 ## Sources
 
