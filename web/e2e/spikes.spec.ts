@@ -206,10 +206,32 @@ test("S4: a 20-panel workspace restores under 300 ms with zero hidden subscripti
   record("S4", { panels: 20, groups: 4, ...results });
 });
 
+/**
+ * The centre of the largest visible docked panel outside the group that holds `tab`: a drop target that does not
+ * depend on which panels a default workspace opens.
+ */
+async function dropTarget(page: Page, tab: string): Promise<{ panel: string; x: number; y: number }> {
+  const target = await page.evaluate((tabId) => {
+    const from = document.querySelector(`[data-tab="${tabId}"]`)?.closest(".dv-groupview");
+    let best: { panel: string; x: number; y: number; area: number } | undefined;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>("[data-panel]"))) {
+      if (el.closest(".dv-resize-container") || (from && from.contains(el))) continue;
+      const r = el.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (area > (best?.area ?? 0)) best = { panel: el.dataset.panel!, x: r.x + r.width / 2, y: r.y + r.height / 2, area };
+    }
+    return best;
+  }, tab);
+  expect(target, `a visible panel outside the group of the ${tab} tab`).toBeDefined();
+  return target!;
+}
+
 test("S3: every Dockview surface uses theme tokens, light and dark", async ({ page, request }) => {
-  const slug = await newProject(request, "S3");
   const report: Record<string, unknown> = {};
   for (const scheme of ["light", "dark"] as const) {
+    // A project per pass: the drop below is saved (autosave flushes on page hide), so a second pass in the same project
+    // would restore the moved tab instead of the default layout both schemes must scan.
+    const slug = await newProject(request, `S3 ${scheme}`);
     await page.emulateMedia({ colorScheme: scheme });
     await openWorkspace(page, slug, "Training");
     await page.locator('[data-tab="help"]').click();
@@ -217,10 +239,10 @@ test("S3: every Dockview surface uses theme tokens, light and dark", async ({ pa
     // Start a tab drag so the drop overlay exists while we scan.
     const tab = page.locator('[data-tab="library"]');
     const tb = (await tab.boundingBox())!;
+    const target = await dropTarget(page, "library");
     await page.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
     await page.mouse.down();
-    const target = (await page.locator('[data-panel="project"]').boundingBox())!;
-    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+    await page.mouse.move(target.x, target.y, { steps: 8 });
     const scan = await page.evaluate(() => {
       // Every colour a token can resolve to, measured through a probe element.
       const probe = document.createElement("div");
@@ -270,7 +292,8 @@ test("S3: every Dockview surface uses theme tokens, light and dark", async ({ pa
       return { scanned: els.length, overlay: !!document.querySelector(".dv-drop-target-anchor, .dv-drop-target-selection, .dv-drop-target"), offenders: Object.fromEntries(Object.entries(offenders).map(([k, v]) => [k, [...new Set(v)]])) };
     });
     await page.mouse.up();
-    report[scheme] = scan;
+    report[scheme] = { dropTarget: target.panel, ...scan };
+    expect(scan.overlay, `${scheme}: the drop overlay is scanned`).toBe(true);
     expect(scan.offenders, `${scheme}: unthemed surfaces`).toEqual({});
   }
   record("S3", report);

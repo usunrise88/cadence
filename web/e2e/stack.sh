@@ -4,7 +4,8 @@
 set -euo pipefail
 PG_PORT="${E2E_PG_PORT:-55433}"
 API_PORT="${E2E_API_PORT:-18081}"
-NAME="cadence-e2e-pg-$$"
+# The port is in the name: stacks started in fresh containers share the Docker daemon but get the same low PIDs.
+NAME="cadence-e2e-pg-${PG_PORT}-$$"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DATA="$(mktemp -d)"
 # Test tooling (the host token, mint-agent-token) goes to web/.e2e for the Playwright specs; the agent evals
