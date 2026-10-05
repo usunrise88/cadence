@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { OpenNewWindow, Pause, Play, Xmark } from "iconoir-react";
-import { checkpointsListOptions, eventsListOptions, runsGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
+import { checkpointsListOptions, eventsListOptions, pipelineRunsGetOptions, runsGetQueryKey } from "@/api/gen/@tanstack/react-query.gen";
 import type { Checkpoint, Run, RunEstimate, RunStageEntry } from "@/api/gen/types.gen";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,8 @@ import {
   errorMessage,
   focusJob,
   focusPipelineRun,
+  materializeOf,
+  NeedsMaterialize,
   openDocument,
   openPanelById,
   runCommand,
@@ -152,6 +154,7 @@ function Overview({ run, doc }: { run: Run; doc?: string }) {
           {error}
         </p>
       ) : null}
+      {run.status !== "done" ? <PipelineNeeds pipelineRunId={run.pipelineRunId} /> : null}
       {stageOpen ? <StageForm run={run} from={stageFrom ?? best} onClose={() => setStageOpen(false)} /> : null}
 
       <Section id={`run-timeline-${run.id}`} title="Stage timeline">
@@ -302,6 +305,15 @@ function TimelineRow({ s, label, train }: { s: RunStageEntry; label: string; tra
   );
 }
 
+/**
+ * A run not done whose training step would read a dataset version the cache evicted (pipelineRuns.get
+ * needsMaterialize): resuming it fails that step until datasets.materialize brings the version back.
+ */
+function PipelineNeeds({ pipelineRunId }: { pipelineRunId: string }) {
+  const q = useQuery({ ...pipelineRunsGetOptions({ path: { id: pipelineRunId } }) });
+  return <NeedsMaterialize items={q.data?.needsMaterialize ?? []} blocks="resuming this run" onRestored={() => void q.refetch()} />;
+}
+
 /** New stage from a checkpoint: an explicit peak LR (there is no default for it), the estimate first, then start. */
 function StageForm({ run, from, onClose }: { run: Run; from?: string; onClose: () => void }) {
   const project = useProject();
@@ -376,6 +388,7 @@ function StageForm({ run, from, onClose }: { run: Run; from?: string; onClose: (
           {estimate.budget.withinDailyBudget ? "" : " — over today's budget"}
         </p>
       ) : null}
+      {estimate ? <NeedsMaterialize items={materializeOf(estimate.warnings)} blocks="the stage" onRestored={() => void act(true)} /> : null}
       {est.stale ? (
         <p className="text-muted-foreground" data-slot="stage-estimate-stale">
           {est.pending ? "Estimating…" : "The form changed since this estimate: estimate again to start."}

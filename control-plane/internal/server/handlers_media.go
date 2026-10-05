@@ -10,14 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/artifacts"
 	"github.com/usunrise88/cadence/control-plane/internal/audit"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
 	"github.com/usunrise88/cadence/control-plane/internal/credentials"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
+	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/goldensets"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
+	"github.com/usunrise88/cadence/control-plane/internal/registry"
 )
 
 // ---------------------------------------------------------------- media (phase 3 · stream A; tag media, R25)
@@ -36,7 +41,9 @@ func (s *Server) newMedia() (*media.Service, *media.Signer) {
 	}
 	d := s.defaultsDoc().Media
 	svc := &media.Service{Pool: s.Pool, CAS: s.CAS, MaxSpan: float64(d.MaxSpanSeconds.Value),
-		Conversions: make(chan struct{}, max(1, d.MaxConversions.Value))}
+		Conversions: make(chan struct{}, max(1, d.MaxConversions.Value)),
+		// Peaks of a dataset version and tile pyramids compute one at a time beside the conversions.
+		Builds: make(chan struct{}, 1), Defaults: s.defaultsDoc, Jobs: s.Jobs}
 	if s.CAS != nil {
 		svc.Cache = &media.SpanCache{Dir: filepath.Join(s.CAS.Root(), "cache", "media-spans"),
 			MaxBytes: func() int64 { return int64(s.defaultsDoc().Media.SpanCacheMB.Value) << 20 }}
@@ -189,10 +196,30 @@ func (s *Server) spectrogramGet(w http.ResponseWriter, r *http.Request, id api.U
 	if err != nil {
 		return err
 	}
-	if _, err := s.mediaFor(ctx, u); err != nil {
+	p, err := s.mediaFor(ctx, u)
+	if err != nil {
 		return err
 	}
 	t, err := s.media.FindTiles(ctx, u)
+	if pe, ok := problems.As(err); ok && pe.Type == problems.NotFound && params.Tile == nil {
+		// No pyramid yet: the first manifest request builds it (media.spectrogram), later ones wait for the same job.
+		var build media.TilesBuild
+		err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+			var err error
+			if build, err = s.media.StartTiles(ctx, tx, id, u); err != nil {
+				return err
+			}
+			return events.Append(ctx, tx, p.Actor, nil, build.Drafts)
+		})
+		if err != nil {
+			return err
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "2")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusAccepted)
+		return json.NewEncoder(w).Encode(api.JobAccepted{JobId: build.Job.ID})
+	}
 	if err != nil {
 		return err
 	}
@@ -219,6 +246,7 @@ func (s *Server) spectrogramGet(w http.ResponseWriter, r *http.Request, id api.U
 	if _, ok := doc["audio"]; !ok {
 		doc["audio"] = u.Hash
 	}
+	s.media.TouchTiles(ctx, t.Artifact) // a view: the pyramid's retention counts from now (media.tiles_retention_days)
 	w.Header().Set("Content-Type", "application/json")
 	return json.NewEncoder(w).Encode(doc)
 }
@@ -304,11 +332,12 @@ func (s *Server) PeaksGet(ctx context.Context, req api.PeaksGetRequestObject) (a
 	if hopMs%10 != 0 {
 		return nil, problems.BadRequest.New("hopMs must be a multiple of 10 (the base peaks are 10 ms); got %d", hopMs)
 	}
-	p, hash, rate, err := s.media.Peaks(ctx, u)
+	sp, err := s.media.PeaksOf(ctx, u, media.PeaksSourceView)
 	if err != nil {
 		return nil, err
 	}
-	dur := float64(p.Frames()) * p.HopS
+	hop, rate, hash := sp.HopS(), sp.SampleRate(), sp.Artifact
+	dur := float64(sp.Frames()) * hop
 	if u.Duration > 0 {
 		dur = u.Duration
 	}
@@ -322,12 +351,17 @@ func (s *Server) PeaksGet(ctx context.Context, req api.PeaksGetRequestObject) (a
 	if end <= start {
 		return nil, problems.BadRequest.New("end (%.3f s) must be after start (%.3f s)", end, start)
 	}
-	first := int(start / p.HopS)
-	count := int(end/p.HopS+0.999999) - first
-	span := p.Span(first, count, hopMs/10)
+	first := int(start / hop)
+	count := int(end/hop+0.999999) - first
+	span, first, err := sp.Span(first, count, hopMs/10)
+	if err != nil {
+		return nil, err
+	}
+	computed := sp.Computed
 	out := api.AudioPeaks{
 		UtteranceId: u.ID, Channels: span.Channels, HopS: span.HopS, Frames: span.Frames(),
-		Start: round3(float64(first) * p.HopS), DurationS: round3(dur), Encoding: api.Int8Minmax, Data: span.Bytes(),
+		Start: round3(float64(first) * hop), DurationS: round3(dur), Encoding: api.Int8Minmax, Data: span.Bytes(),
+		Computed: &computed,
 	}
 	if rate > 0 {
 		out.OriginSampleRate = &rate
@@ -350,27 +384,43 @@ func (s *Server) WordsGet(ctx context.Context, req api.WordsGetRequestObject) (a
 	if err != nil {
 		return nil, err
 	}
-	hypA, err := s.readableArtifact(ctx, req.Params.Hypotheses)
+	p := req.Params
+	if p.Hypotheses == nil && p.GoldenSet == nil && p.Alignment == nil {
+		return nil, problems.BadRequest.New("name the hypotheses artifact, a golden set (goldenSet) or an alignment artifact (alignment): words.get has nothing to show otherwise")
+	}
+	if p.Scores != nil && p.Hypotheses == nil {
+		return nil, problems.BadRequest.New("scores mark hypothesis words: name the hypotheses artifact too")
+	}
+	reference, err := s.referenceWords(ctx, u, p.GoldenSet, p.Alignment)
 	if err != nil {
 		return nil, err
 	}
-	var scA *artifacts.Artifact
-	if req.Params.Scores != nil {
-		a, err := s.readableArtifact(ctx, *req.Params.Scores)
+	var (
+		hyp media.HypothesisRow
+		sc  *media.ScoreRow
+	)
+	if p.Hypotheses != nil {
+		hypA, err := s.readableArtifact(ctx, *p.Hypotheses)
 		if err != nil {
 			return nil, err
 		}
-		scA = &a
-	}
-	for _, a := range []*artifacts.Artifact{&hypA, scA} {
-		if a != nil && a.Evicted != nil {
-			return nil, problems.ArtifactEvicted.New("the %s artifact %s was evicted from the content store on %s (eval artifacts are kept %d days after their eval record's last use); run the eval again to see its words",
-				a.Type, a.Hash, a.Evicted.At.UTC().Format(time.DateOnly), defaults.Get().Eval.ArtifactRetentionDays.Value)
+		var scA *artifacts.Artifact
+		if p.Scores != nil {
+			a, err := s.readableArtifact(ctx, *p.Scores)
+			if err != nil {
+				return nil, err
+			}
+			scA = &a
 		}
-	}
-	hyp, sc, err := s.media.Words(u, hypA, scA)
-	if err != nil {
-		return nil, err
+		for _, a := range []*artifacts.Artifact{&hypA, scA} {
+			if a != nil && a.Evicted != nil {
+				return nil, problems.ArtifactEvicted.New("the %s artifact %s was evicted from the content store on %s (eval artifacts are kept %d days after their eval record's last use); run the eval again to see its words",
+					a.Type, a.Hash, a.Evicted.At.UTC().Format(time.DateOnly), defaults.Get().Eval.ArtifactRetentionDays.Value)
+			}
+		}
+		if hyp, sc, err = s.media.Words(u, hypA, scA); err != nil {
+			return nil, err
+		}
 	}
 	words, deletions, aligned := hyp.Words, []media.Deletion{}, false
 	if sc != nil {
@@ -402,7 +452,68 @@ func (s *Server) WordsGet(ctx context.Context, req api.WordsGetRequestObject) (a
 	if sc != nil {
 		out.Ref, out.Sub, out.Del, out.Ins, out.RefWords = &sc.Ref, &sc.Sub, &sc.Del, &sc.Ins, &sc.RefWords
 	}
+	out.Reference = reference
 	return api.WordsGet200JSONResponse(out), nil
+}
+
+// referenceWords is the utterance's reference track (R51): its row of the alignment artifact named, or of the golden
+// set's newest reference alignment. nil when neither is asked, or the golden set has no alignment; a row the
+// alignment lacks is not-found.
+func (s *Server) referenceWords(ctx context.Context, u media.Utterance, goldenSet, alignment *string) (*api.ReferenceWords, error) {
+	var hash string
+	switch {
+	case alignment != nil:
+		hash = *alignment
+	case goldenSet != nil:
+		v, err := registry.GetVersion(ctx, s.Pool, registry.KindGoldenSet, *goldenSet)
+		if err != nil {
+			return nil, err
+		}
+		var gp struct {
+			DatasetHash string `json:"datasetHash"`
+		}
+		if err := json.Unmarshal(v.Payload, &gp); err != nil || gp.DatasetHash == "" {
+			return nil, problems.ValidationFailed.New("golden set %s names no dataset artifact", *goldenSet)
+		}
+		a, err := goldensets.LatestAlignment(ctx, s.Pool, gp.DatasetHash)
+		if err != nil {
+			return nil, err
+		}
+		if a == nil {
+			return nil, nil // never aligned: the view shows no reference track
+		}
+		hash = a.Artifact
+	default:
+		return nil, nil
+	}
+	art, err := s.readableArtifact(ctx, hash)
+	if err != nil {
+		return nil, err
+	}
+	if art.Type != goldensets.TypeAlignment {
+		return nil, problems.BadRequest.New("%s is a %s artifact, not an alignment", hash, art.Type)
+	}
+	row, aligner, err := s.media.Reference(u, art)
+	if err != nil {
+		return nil, err
+	}
+	out := &api.ReferenceWords{Artifact: hash, Aligned: row.Aligned, Text: row.Text, Words: make([]api.ReferenceWord, 0, len(row.Words))}
+	for _, w := range row.Words {
+		out.Words = append(out.Words, api.ReferenceWord{Index: w.Index, Word: w.Word, Start: w.Start, End: w.End, Score: w.Score})
+	}
+	if row.Language != "" {
+		out.Language = &row.Language
+	}
+	if len(row.Skipped) > 0 {
+		out.Skipped = &row.Skipped
+	}
+	if row.Reason != "" {
+		out.Reason = &row.Reason
+	}
+	if aligner != "" {
+		out.Aligner = &aligner
+	}
+	return out, nil
 }
 
 func (s *Server) readableArtifact(ctx context.Context, hash string) (artifacts.Artifact, error) {

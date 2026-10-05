@@ -217,10 +217,14 @@ type StartInput struct {
 	Actor     auth.Actor
 	Priority  int
 	Fresh     bool
-	// Export is set by datasets.export (internal/exports) only: a step of job kind export (dataset_export, hf_push,
-	// shar_export) runs nowhere else, so the export's licence check, golden-set check and approval cannot be skipped
-	// by naming the kind in a project pipeline.
+	// Export is set by datasets.export (internal/exports) and models.export (internal/modelexports) only: a step of
+	// job kind export (dataset_export, hf_push, shar_export; a family's model export) runs nowhere else, so the
+	// export's licence check, golden-set check and approval cannot be skipped by naming the kind in a project pipeline.
 	Export bool
+	// JobKinds runs a step as another compute job kind than its kind declares (step id → job kind): a generated
+	// pipeline's serve step runs as eval in a parity check and as benchmark in a benchmark (phase 5 · stream D1), so
+	// the queue gives it the card the way that work needs. Facades only; a pipeline file cannot set it.
+	JobKinds map[string]string
 }
 
 // Prepare reads (or takes) the pipeline and validates it for a run without writing anything; a dry run answers
@@ -265,7 +269,7 @@ func (e *Engine) Prepare(ctx context.Context, q storage.Querier, in StartInput) 
 		err = exportsOnly(plan)
 	}
 	if err == nil {
-		err = e.trainable(ctx, q, plan, in.Inputs)
+		err = e.trainable(ctx, q, &plan, in.Inputs)
 	}
 	if err == nil {
 		err = licensed(ctx, q, plan)
@@ -338,15 +342,20 @@ func licensed(ctx context.Context, q storage.Querier, plan Plan) error {
 // trainable (data.TrainableArtifact: the type and meta come from the artifact index, a mix's datasets from its
 // content). An input only non-training steps read (eval, data, export: resources.jobKind) may be eval-only: golden
 // and replay sets are evaluated, never trained. Inputs a training step gets from other steps are checked when it is
-// queued (advance).
-func (e *Engine) trainable(ctx context.Context, q storage.Querier, plan Plan, inputs map[string]steps.ArtifactRef) error {
+// queued (advance). A dataset version the cache evicted does not refuse the plan: it becomes a needs-materialize
+// warning (plan.Materialize), so a dry run says what to bring back, and Start refuses the real call.
+func (e *Engine) trainable(ctx context.Context, q storage.Querier, plan *Plan, inputs map[string]steps.ArtifactRef) error {
 	for _, name := range sortedKeys(inputs) {
 		for _, ps := range plan.Steps {
 			if !trains(ps.Kind.Resources) || !readsInput(ps, name) {
 				continue
 			}
-			if err := data.TrainableArtifact(ctx, q, e.o.CAS, inputs[name]); err != nil {
+			list, err := e.evicted(ctx, q, name, inputs[name])
+			if err != nil {
 				return err
+			}
+			for _, m := range list {
+				plan.addMaterialize(ps.Step, ps.Kind.Ref(), m)
 			}
 			break
 		}
@@ -399,6 +408,9 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 	if err != nil {
 		return Run{}, nil, err
 	}
+	if err := plan.MaterializeRefusal(ctx, tx); err != nil { // a dry run warned (needs-materialize)
+		return Run{}, nil, err
+	}
 	var bad Errors
 	for _, name := range sortedKeys(in.Inputs) {
 		ref, err := indexedSize(ctx, tx, in.Inputs[name])
@@ -433,6 +445,9 @@ func (e *Engine) Start(ctx context.Context, tx pgx.Tx, in StartInput) (Run, []ev
 			Params: ps.Params, Departures: ps.Departures, Wiring: ps.In, Produces: ps.Kind.Produces,
 			Resources: ps.Kind.Resources, SecretNames: ps.Kind.Secrets, EstimateSeconds: ps.EstimateSeconds,
 			Auxiliaries: ps.Auxiliaries,
+		}
+		if k := in.JobKinds[ps.Step]; k != "" {
+			row.Resources.JobKind = k
 		}
 		if row.Produces == nil {
 			row.Produces = map[string]string{}

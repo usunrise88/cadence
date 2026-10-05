@@ -26,7 +26,7 @@ As built (phase 4, 2026-10-03/04; plan `docs/review/2026-10-03-phase-4-plan.md`,
 
 1. Source and mount. `sources.new` (`POST /registry/sources`) registers the corpus eval-only; clearing it for training is `sources.edit` (registry approval for agents, `registry-changes`), and `sources.get` lists the clearing history and every ingest. The audio lives on a mount — `mounts.new` is a registry approval the admin decides (`mount-registration`, for people too); the stand's first is `corpora` (`local`, root `/mnt/corpora`, read-only), with `exports` (`/mnt/exports`, writable) beside it.
 2. Ingest. `pipelines/data-ingest.yaml` runs `sdp_ingest` (walk, decode, stereo split with roles, the bot's channel labelled from the TTS script with origin `model:tts-script`, 16 kHz, energy VAD per channel, segments with `mount://` URIs and canonical hashes; no audio copied) → `text_normalise` → `manifest_filter` → `speaker_disjoint_split` → `dataset_freeze` in mode draft, which registers a draft dataset version (`frozen: false`) and records each utterance's mount URI. The engine refuses a step whose `x-cadence.registry: source` parameter names a missing, archived or unlicensed source (`source-unlicensed`), and the draft hook checks again.
-3. Pseudo-label where there is no human text: `pipelines/pseudo-label.yaml` cuts the segments (`segments_cut`), runs the two members (`whisper_transcribe@1` and the `oasis_transcribe@1` service, required), `lid_classify@1` (Whisper's language token; the VoxLingua107 path is not usable in the NeMo runtime), and `pseudolabel_ensemble@2` (kept when the members agree within `pseudolabel.max_pairwise_wer` 0.15 and LID agrees; the label is Whisper's cased, punctuated text when OASIS's spoken form agrees, `pseudolabel.prefer_written_form`). Every member is an adopted `auxiliary` version (approval `auxiliary-adoption`). Owner decision 2026-10-04: the base model is no longer a member (on the stand it kept 490 of 2 944 FLEURS segments with Whisper, no better than Whisper alone: WER against the references 0.336 against Whisper's 0.121), so OASIS is required — without its service the dry run refuses (`auxiliary-unavailable`), and the ensemble refuses fewer than `pseudolabel.min_members` (2) members wired rather than agreeing with itself.
+3. Pseudo-label where there is no human text: `pipelines/pseudo-label.yaml` cuts the segments (`segments_cut`), runs the two members (`whisper_transcribe@1` and the `oasis_transcribe@1` service, required), `lid_classify@2` (VoxLingua107 in runtime `omni`; Whisper's detected language is the second opinion), and `pseudolabel_ensemble@2` (kept when the members agree within `pseudolabel.max_pairwise_wer` 0.15 and LID agrees; the label is Whisper's cased, punctuated text when OASIS's spoken form agrees, `pseudolabel.prefer_written_form`). Every member is an adopted `auxiliary` version (approval `auxiliary-adoption`). Owner decision 2026-10-04: the base model is no longer a member (on the stand it kept 490 of 2 944 FLEURS segments with Whisper, no better than Whisper alone: WER against the references 0.336 against Whisper's 0.121), so OASIS is required — without its service the dry run refuses (`auxiliary-unavailable`), and the ensemble refuses fewer than `pseudolabel.min_members` (2) members wired rather than agreeing with itself.
    Untranscribed calls for annotation: `pipelines/calls-ingest.yaml` is `sdp_ingest` alone (`channels: split`, roles from the sidecar) and ends at the `segments` artifact, the frame of `batches.new` (`segments: b3:…`); `data-ingest` cannot draft them (owner decision 2026-10-04).
 4. Triage. Disagreements get origin `pseudo-label:disputed`, never reach training (`manifest_filter` drops them) and are indexed as triage items (`triage.list`, event `triage.item_added` on `triage.new`); a person resolves each in the Triage panel with `triage.accept|correct|reject` (agents never do).
 5. Preview and freeze. `datasets.preview` answers utterances and hours per language and split after filters from the registry alone; `datasets.freeze` runs the leakage check against every golden set (`golden-set-leakage`; dry run: the check only — by identity and by fingerprint, where a segment's `file-b3`, the canonical hash of the whole file it was cut from, matches a golden utterance's `audio-b3`, so a golden FLEURS file re-cut by VAD from the `corpora` mount is refused; `sdp_ingest@2` also leaves a corpus's `test/` split out by default), checks the project quota, then reruns the draft's `dataset_freeze` in mode cut — one 16 kHz WAV per utterance in the content store plus Lhotse `MonoCut` manifests in shards of 2 000, quality checks, the dataset card — and sets `frozen: true` (event `dataset_version.frozen`).
@@ -184,9 +184,30 @@ Process:
 
 Windows: Model, Shadow, Approvals, Queue & GPU, Metrics (latency view), Library.
 
-Agent tools: `models.register` (phase 3, Block 3), `models.export`, `models.parity`, `models.benchmark`, `deployments.``promo``te` (shadow directly; canary and production as approval requests), `deployments.rollback` (approval request).
+Agent tools: `models.register` (phase 3, Block 3), `models.export`, `models.parity`, `models.benchmark`, `deploymentTargets.list|get`, `deployments.new` (shadow, directly), `deployments.list|get`, `deployments.promote` (canary and production as approval requests), `deployments.rollback` (approval request), `promotions.list|get`, `deploymentTargets.new|edit|archive` (an approval the admin decides, for people too). Not for agents: `promotions.verify` (a person pastes the receipt the delivery script printed on a production host).
 
 Gates: parity and latency budget must pass; shadow must reach a minimum volume before canary; canary, production and rollback need a person, and production and rollback are executed by that person through the generated delivery script.
+
+Specified for phase 5 (2026-10-05; numbers from spike E1, `docs/spikes/E1-onnx-triton.md`; steps 2–4 built by stream D1):
+
+- Steps 2–4 are `models.export`, `models.parity` and `models.benchmark`: pipelines generated per request in the
+  family's runtime (roles `export`, `serve`, `parity reference`) with neutral scorers (03 "Export, parity and
+  benchmark (phase 5)"). Their results attach to the model version as exports (02 "Deployment entities").
+- Thresholds (R31, `deploy.*`): parity on a fixed 200-utterance sample of the first target golden set, WER difference
+  ≤ 0.1 points absolute, ≥ 97 % identical token sequences (owner to confirm; R31 said 99.5 %) and word disagreement ≤
+  0.005; p95 chunk latency from audio availability ≤ 100 ms (a word waits at most chunk +
+  100 ms) at the target's concurrency (32, a placeholder until Эра's peak is known). E1 measured the served fp32
+  TensorRT engine at 99.0 % identical, Δ 0.000, and p95 20 ms at 32 streams, 63 ms at 256 (A3's Python backend: 867 ms at 32).
+- The staging Triton is the compose profile `serving`. Benchmarks take the card alone; shadow replay shares it from a
+  serving reserve that training leaves alone (06 "Staging serving").
+- Step 5 is a shadow deployment (`deployments.new`) replayed every night from a calls mount until it reaches 20 h;
+  step 6 and 7 are `deployments.promote` to a delivery target (R46: it must serve the family, format and profile).
+  Each yields a signed, hash-chained Promotion record and a delivery bundle; the person runs `deliver.sh` on the
+  production host and pastes its receipt line into Cadence (`promotions.verify`), which confirms the stage (R33).
+  Rollback is the same path with a small script; the previous version stays loaded.
+- Static boost lists ship in the bundle as decoding configuration; a changed list is a config-only promotion. The
+  per-call field for dynamic candidates waits for Эра (R32, the decisions brief
+  `docs/review/2026-10-05-phase-5-decisions.md`).
 
 ## Block 5 — Production flywheel
 
@@ -240,8 +261,9 @@ As built (phase 4, stream A; `internal/annotation`, migration 0038; R27; help `g
 - Entities: batches `anb_` (`annotation_batches`), items `bit_` (`annotation_items`), annotations `ann_` (one per
   person and item). Guidelines are not a help article but Markdown in the project repository,
   `annotation/guidelines/<name>.md` (`annotation.guidelines`, default `default`); a batch pins the repository's head
-  commit at creation and the golden-set card cites path and commit. Reviewers see the path and commit, not the text
-  (not served yet).
+  commit at creation and the golden-set card cites path and commit. Reviewers read the text at that commit
+  (`guidelines.get`, `GET /batches/{id}/guidelines`: the file at the pinned commit, Markdown up to 256 KiB; a
+  reviewer's session reaches it for its own batch only, and nothing else of the repository).
 - `batches.new` (`POST /projects/{p}/batches`, dry run first) samples from a frame — a dataset version's segments
   (usually the draft `pipelines/data-ingest` ended in) or a `segments` artifact — over one role
   (`annotation.target_role`, `caller`), stratified by campaign, month, duration (`annotation.duration_edges_s`) and
@@ -306,10 +328,12 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Freeze | Dataset version | Freeze dataset version | `POST /registry/datasets:freeze` (`datasets.freeze`, body `{version}`; 202 with the cut job) | `datasets.freeze` | `entity.dataset_version.{id}` (`dataset_version.frozen`), `pipeline_run.{id}` |
 | Search utterances | Dataset version, Source, Palette | — | `GET /registry/utterances:search` (`utterances.search`) | `utterances.search` | — |
 | Materialise, evict | Dataset version, Storage | Materialise; Evict | `POST /registry/datasets:materialize`, `:evict` (body `{versionId}`) | `datasets.materialize`, `datasets.evict` | `job.{id}`, `entity.artifact.{hash}` |
-| Export | Dataset version | — (no export UI yet) | `POST /registry/datasets:export` (`datasets.export`; Hub: 202 approval); `GET /projects/{p}/exports`, `GET /exports/{id}` | `datasets.export`, `exports.list`, `exports.get` | `entity.export.{id}` (`export.started|done`), `job.{id}` |
+| Export | Dataset version | Export… (plan, then export; Hub: approval) | `POST /registry/datasets:export` (`datasets.export`; Hub: 202 approval); `GET /projects/{p}/exports`, `GET /exports/{id}` | `datasets.export`, `exports.list`, `exports.get` | `entity.export.{id}` (`export.started|done`), `job.{id}` |
+| Read a dataset card | Dataset version | — | `GET /registry/texts/{hash}` (`texts.get`; only a blob a registry version names as text to read, capped at 256 KiB) | `texts.get` | — |
 | Archive a registry version | Library, Dataset version | Archive version | `POST /registry/versions:archive` (`versions.archive`, admin) | — (agents never archive, `no-deletes`) | `entity.<kind>.{id}` |
 | Annotation batch | Annotation batch, Triage (Annotate) | New batch (dry run first); Freeze batch (approval) | `POST /projects/{p}/batches` (`batches.new`), `GET /projects/{p}/batches`, `GET /batches/{id}`, `POST /batches/{id}:freeze` | `batches.new`, `batches.list`, `batches.get`, `batches.freeze` (approval) | `entity.annotation_batch.{id}`, `approvals` |
 | Annotate, adjudicate | Triage (Annotate), Audio | Done / skip / flag; Adjudicate | `GET /batches/{id}/batch-items[/{item}]`; `POST …/batch-items/{item}/annotations` (`annotations.new`); `POST …/batch-items/{item}:accept` (`batchItems.accept`) | `batchItems.list`, `batchItems.get` (annotating is a person's) | `entity.annotation_batch.{id}` |
+| Read the guidelines | Triage (Annotate), Annotation batch | — | `GET /batches/{id}/guidelines` (`guidelines.get`; the file at the batch's pinned commit; a reviewer of that batch only) | `guidelines.get` | — |
 | Invite a reviewer | Annotation batch | Invite reviewer | `POST /batches/{id}/invitations` (`invitations.new`, admin), `GET …/invitations`; `POST /auth:accept` (tag `auth`) | — (admin only) | `entity.annotation_batch.{id}` (`annotation_batch.reviewer_invited`) |
 | Audio tracks | Audio, Triage | — | `GET /registry/utterances/{id}/tracks` (`tracks.get`, tag `media`) | — (agents read no raw audio) | — |
 | Compose mix | Mix | Save mix as version | `POST /projects/{p}/mixes` | `mixes.``new`, `mixes.preview` | `entity.mix.{id}` |
@@ -331,8 +355,10 @@ Every step now has a window, a palette command, an API operation, an agent tool 
 | Register model | Eval report, Model, Experiment | Register model version | `POST /projects/{p}/models:register` (`models.register`, writes a registry version; needs a passed gate, approval for agents); `models.list`, `models.get` under `/registry/models` | `models.register`, `models.list`, `models.get` | `entity.model.{id}` |
 | Lineage | Lineage, Library | — | `GET /registry/{id}:lineage` (`registry.lineage`; `direction`, `depth`, `limit`) | `registry.lineage` | — |
 | Language pack, boost lists | Language pack | Edit language pack; Edit boost list | `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` (`/projects/{p}/langpacks/{locale}[/boost/{domain}]`, files in `lang/<locale>/`) | `langpacks.list`, `langpacks.get`, `langpacks.edit`, `boost.edit` | `recipe.{path}` |
-| Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /models/{id}:export`, `:parity`, `:benchmark` | `models.*` | `job.{id}` |
-| Shadow, canary, production, rollback | Model, Shadow, Approvals | Promote; Roll back | `POST /projects/{p}/deployments`; `…:rollback` | `deployments.``promo``te`, `deployments.rollback` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
+| Export, parity, benchmark | Model, Queue & GPU | Export; Parity check; Benchmark | `POST /projects/{p}/models:export`, `:parity`, `:benchmark` (body `{version, …}`; phase 5) | `models.export`, `models.parity`, `models.benchmark` | `entity.model.{id}`, `pipeline_run.{id}`, `job.{id}` |
+| Deployment targets | Settings (Deployment targets), Model | New target (approval, admin); Edit target | `deploymentTargets.list|get|new|edit|archive` (`/deployment-targets`; phase 5, R46) | `deploymentTargets.list`, `deploymentTargets.get` | `entity.deployment_target.{id}`, `approvals` |
+| Shadow, canary, production, rollback | Model, Shadow, Approvals | Deploy to shadow; Replay now; Promote (confirm modal); Roll back | `POST /projects/{p}/deployments` (`deployments.new`, shadow); `GET\|POST /deployments/{id}/shadow-replays`, `GET /shadow-replays/{id}`; `POST /deployments/{id}:promote`, `:rollback` (checks, then an approval for everyone; signed record and delivery bundle) | `deployments.new`, `deployments.list`, `deployments.get`, `deployments.promote`, `deployments.rollback`, `shadowReplays.list`, `shadowReplays.get`, `shadowReplays.new` | `deploy.{id}`, `shadow.{deployment}`, `approvals` |
+| Confirm a delivery | Model, Approvals | Confirm delivery (paste the receipt) | `promotions.list` (`GET /deployment-targets/{id}/promotions`), `promotions.get`, `promotions.verify` (`POST /promotions/{id}:verify`, people only) | `promotions.list`, `promotions.get` | `deploy.{id}` |
 | Capture and signals | Shadow, Triage queue | — | `GET /projects/{p}/samples`, `/signals` | `samples.query`, `signals.list` | `triage.new` |
 | Triage (flywheel, phase 5) | Triage queue, Diff, Audio | Accept / correct / reject | `POST /triage/{id}:accept`, `:correct`, `:reject` (built in phase 4 for pseudo-labels) | `triage.next`, `triage.``accept, triage.correct, triage.reject` | `entity.triage_item.{id}` |
 | Package corrections | Triage queue, Dataset version | Package correction batch | `POST /projects/{p}/corrections:package` | `corrections.package` | `entity.source.{id}` |

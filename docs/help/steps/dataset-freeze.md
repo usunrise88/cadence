@@ -23,7 +23,7 @@ and fingerprints work before anything is copied; a draft is never mixed, trained
 **`mode: cut`** is what `datasets.freeze` runs (with `draft_version`). It decodes every file from its mount, cuts each
 member, checks it against its hash (a file changed since ingest fails the step), and writes the first copy: a
 `cadence.dataset/1` artifact the phase-2 training path reads — `dataset.json` (plus `draftVersionId`, `quality`,
-`stats`, `card`, `shards`), `manifest.jsonl` (plus `uri`, `role`; `audio` is `audio/<h2>/<h>.wav`, h the BLAKE3 hex),
+`stats`, `card`, `shards`), `manifest.jsonl` (plus `uri`, `role`, `eou?`; `audio` is `audio/<h2>/<h>.wav`, h the BLAKE3 hex),
 the canonical WAVs, `card.md`, and the shards: `shards/cuts.NNNNNN.jsonl.gz`, a Lhotse cuts file (MonoCut, recording
 source a file inside the artifact) per `shard_utterances` members — the unit of pinning, eviction and materialisation.
 The output is byte-identical on every host.
@@ -36,7 +36,10 @@ blocking): `silence_share` (mean 1 − voice-activity share), `clipping_share` (
 samples at full scale), `length_outliers` (share of members whose characters per second lie beyond `quality_outlier_z`
 standard deviations). **Statistics** (`stats`, binned for the Dataset version panel, R53): `durationHistogram`,
 `charsPerSecondHistogram`, `levelHistogram` (`edges` are lower bounds, the last bucket is open), `durationPercentiles`
-(p5, p50, p95), `origins`, `roles`, `sourceRates`, `speakers`.
+(p5, p50, p95), `origins`, `roles`, `sourceRates`, `speakers`, and `eou` when members carry end-of-utterance records
+(segments of multi-channel recordings, `sdp_ingest`): `utterances`, `withGap`, `overlapping` (negative gaps),
+`p50GapS`, `p90GapS`, `meanGapS` and `gapHistogram`; the card states the gap percentiles. Each member's record is
+carried into `manifest.jsonl` as `eou`.
 
 ## Place in the loop
 

@@ -14,8 +14,9 @@ The worker protocol (docs/review/2026-09-30-phase-2-plan.md "Worker protocol", R
   after a restart resumes; an ended job answers its stored outcome. Register the `step` kind on
   `jobs.QueueSteps` with a long timeout.
 - **Live sessions** (phase 3 · stream T): Await also takes River kind `live` (`steps.LiveJobKind`, a transcription
-  session's interactive job, internal/transcriptions); `OnGranted` lets that package add a fresh live token to an
-  interactive lease's secret env.
+  session's interactive job, internal/transcriptions); `OnGranted` hooks (several, in order) let that package add a
+  fresh live token to an interactive lease's secret env, and internal/serving name a served step's staging target and
+  count its lease (phase 5; the claim reads a lease's served model from `serving_leases` for the queue's reserve).
 - **Claim** (long-poll ≤ 30 s): waiting jobs whose `kind@version` the worker published, not paused or cancelled,
   interactive jobs first (R49), then by project queue priority, job priority, then FIFO, read in keyset pages of 50 (at most 20 per attempt) until one
   fits, so jobs that cannot fit never hide one further down; card slot rows are locked in card index order (the

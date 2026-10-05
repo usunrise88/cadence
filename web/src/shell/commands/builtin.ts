@@ -35,6 +35,8 @@ import { registerEvaluationCommands } from "./evaluation";
 import { registerDataCommands } from "./data";
 import { registerTranscriptionCommands } from "./transcriptions";
 import { registerStorageCommands } from "./storage";
+import { registerShadowCommands } from "./shadow";
+import { registerDeployCommands } from "./deploy";
 import { registerAnnotationCommands } from "./annotation";
 import { registerTrainingCommands } from "./training";
 import { registerProjectCommands } from "./projects";
@@ -247,6 +249,8 @@ export function registerBuiltinCommands(): void {
   registerStorageCommands();
   registerDataCommands();
   registerAnnotationCommands();
+  registerDeployCommands();
+  registerShadowCommands();
 
   // One "Open <panel>" command per registered tool panel.
   for (const m of panels.all()) {

@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentCredentialsArchiveData, AgentCredentialsArchiveErrors, AgentCredentialsArchiveResponses, AgentCredentialsGetData, AgentCredentialsGetErrors, AgentCredentialsGetResponses, AgentCredentialsListData, AgentCredentialsListErrors, AgentCredentialsListResponses, AgentCredentialsSetData, AgentCredentialsSetErrors, AgentCredentialsSetResponses, AgentCredentialsVerifyData, AgentCredentialsVerifyErrors, AgentCredentialsVerifyResponses, AgentMessagesListData, AgentMessagesListErrors, AgentMessagesListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentProvidersListData, AgentProvidersListErrors, AgentProvidersListResponses, AgentSessionsAcceptData, AgentSessionsAcceptErrors, AgentSessionsAcceptResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsGetData, AgentSessionsGetErrors, AgentSessionsGetResponses, AgentSessionsListData, AgentSessionsListErrors, AgentSessionsListResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AgentSessionsPauseData, AgentSessionsPauseErrors, AgentSessionsPauseResponses, AgentSessionsResumeData, AgentSessionsResumeErrors, AgentSessionsResumeResponses, AgentSessionsRevertData, AgentSessionsRevertErrors, AgentSessionsRevertResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, AnnotationsNewData, AnnotationsNewErrors, AnnotationsNewResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, ArtifactsEvictData, ArtifactsEvictErrors, ArtifactsEvictResponses, ArtifactsGetData, ArtifactsGetErrors, ArtifactsGetResponses, AudioGetData, AudioGetErrors, AudioGetResponses, AudioSignData, AudioSignErrors, AudioSignResponses, AuditListData, AuditListErrors, AuditListResponses, AuthAcceptData, AuthAcceptErrors, AuthAcceptResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, AuxiliariesGetData, AuxiliariesGetErrors, AuxiliariesGetResponses, AuxiliariesListData, AuxiliariesListErrors, AuxiliariesListResponses, BackupsGetData, BackupsGetErrors, BackupsGetResponses, BackupsListData, BackupsListErrors, BackupsListResponses, BackupsNewData, BackupsNewErrors, BackupsNewResponses, BackupsVerifyData, BackupsVerifyErrors, BackupsVerifyResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BatchesFreezeData, BatchesFreezeErrors, BatchesFreezeResponses, BatchesGetData, BatchesGetErrors, BatchesGetResponses, BatchesListData, BatchesListErrors, BatchesListResponses, BatchesNewData, BatchesNewErrors, BatchesNewResponses, BatchItemsAcceptData, BatchItemsAcceptErrors, BatchItemsAcceptResponses, BatchItemsGetData, BatchItemsGetErrors, BatchItemsGetResponses, BatchItemsListData, BatchItemsListErrors, BatchItemsListResponses, BoostEditData, BoostEditErrors, BoostEditResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesCompareData, BranchesCompareErrors, BranchesCompareResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, CheckpointsAverageData, CheckpointsAverageErrors, CheckpointsAverageResponses, CheckpointsGetData, CheckpointsGetErrors, CheckpointsGetResponses, CheckpointsListData, CheckpointsListErrors, CheckpointsListResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsEvictData, DatasetsEvictErrors, DatasetsEvictResponses, DatasetsExportData, DatasetsExportErrors, DatasetsExportResponses, DatasetsFreezeData, DatasetsFreezeErrors, DatasetsFreezeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DatasetsMaterializeData, DatasetsMaterializeErrors, DatasetsMaterializeResponses, DatasetsPreviewData, DatasetsPreviewErrors, DatasetsPreviewResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EgressHostsListData, EgressHostsListErrors, EgressHostsListResponses, EvalsGateData, EvalsGateErrors, EvalsGateResponses, EvalsGetData, EvalsGetErrors, EvalsGetResponses, EvalsListData, EvalsListErrors, EvalsListResponses, EvalsNewData, EvalsNewErrors, EvalsNewResponses, EventsListData, EventsListErrors, EventsListResponses, ExperimentsGetData, ExperimentsGetErrors, ExperimentsGetResponses, ExperimentsListData, ExperimentsListErrors, ExperimentsListResponses, ExperimentsNewData, ExperimentsNewErrors, ExperimentsNewResponses, ExportsGetData, ExportsGetErrors, ExportsGetResponses, ExportsListData, ExportsListErrors, ExportsListResponses, GatesEditData, GatesEditErrors, GatesEditResponses, GatesGetData, GatesGetErrors, GatesGetResponses, GoldenSetsFreezeData, GoldenSetsFreezeErrors, GoldenSetsFreezeResponses, GoldenSetsGetData, GoldenSetsGetErrors, GoldenSetsGetResponses, GoldenSetsListData, GoldenSetsListErrors, GoldenSetsListResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, HostCredentialsClaimData, HostCredentialsClaimErrors, HostCredentialsClaimResponses, HostCredentialsReportData, HostCredentialsReportErrors, HostCredentialsReportResponses, HostSessionsAskData, HostSessionsAskErrors, HostSessionsAskResponses, HostSessionsClaimData, HostSessionsClaimErrors, HostSessionsClaimResponses, HostSessionsDecisionData, HostSessionsDecisionErrors, HostSessionsDecisionResponses, HostSessionsReleaseData, HostSessionsReleaseErrors, HostSessionsReleaseResponses, HostSessionsReportData, HostSessionsReportErrors, HostSessionsReportResponses, InvitationsListData, InvitationsListErrors, InvitationsListResponses, InvitationsNewData, InvitationsNewErrors, InvitationsNewResponses, JobLogsListData, JobLogsListErrors, JobLogsListResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsEditData, JobsEditErrors, JobsEditResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsPauseData, JobsPauseErrors, JobsPauseResponses, JobsResumeData, JobsResumeErrors, JobsResumeResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, LangpacksEditData, LangpacksEditErrors, LangpacksEditResponses, LangpacksGetData, LangpacksGetErrors, LangpacksGetResponses, LangpacksListData, LangpacksListErrors, LangpacksListResponses, MeGetData, MeGetErrors, MeGetResponses, MetricsGetData, MetricsGetErrors, MetricsGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, ModelFamiliesGetData, ModelFamiliesGetErrors, ModelFamiliesGetResponses, ModelFamiliesListData, ModelFamiliesListErrors, ModelFamiliesListResponses, ModelsGetData, ModelsGetErrors, ModelsGetResponses, ModelsListData, ModelsListErrors, ModelsListResponses, ModelsRegisterData, ModelsRegisterErrors, ModelsRegisterResponses, MountsGetData, MountsGetErrors, MountsGetResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, MountsScanData, MountsScanErrors, MountsScanResponses, MountsVerifyData, MountsVerifyErrors, MountsVerifyResponses, NormalizersGetData, NormalizersGetErrors, NormalizersGetResponses, NormalizersListData, NormalizersListErrors, NormalizersListResponses, NotificationRulesEditData, NotificationRulesEditErrors, NotificationRulesEditResponses, NotificationRulesListData, NotificationRulesListErrors, NotificationRulesListResponses, NotificationSettingsEditData, NotificationSettingsEditErrors, NotificationSettingsEditResponses, NotificationSettingsGetData, NotificationSettingsGetErrors, NotificationSettingsGetResponses, PeaksGetData, PeaksGetErrors, PeaksGetResponses, PipelineRunsCancelData, PipelineRunsCancelErrors, PipelineRunsCancelResponses, PipelineRunsGetData, PipelineRunsGetErrors, PipelineRunsGetResponses, PipelineRunsListData, PipelineRunsListErrors, PipelineRunsListResponses, PipelineRunsRetryData, PipelineRunsRetryErrors, PipelineRunsRetryResponses, PipelineRunsWaitData, PipelineRunsWaitErrors, PipelineRunsWaitResponses, PipelinesListData, PipelinesListErrors, PipelinesListResponses, PipelinesRunData, PipelinesRunErrors, PipelinesRunResponses, PlaybooksGetData, PlaybooksGetErrors, PlaybooksGetResponses, PlaybooksListData, PlaybooksListErrors, PlaybooksListResponses, PlaybooksRunData, PlaybooksRunErrors, PlaybooksRunResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, QueueEntriesListData, QueueEntriesListErrors, QueueEntriesListResponses, RecipesEditData, RecipesEditErrors, RecipesEditResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RecipesNewData, RecipesNewErrors, RecipesNewResponses, RegistryLineageData, RegistryLineageErrors, RegistryLineageResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsCalibrateData, RunsCalibrateErrors, RunsCalibrateResponses, RunsGetData, RunsGetErrors, RunsGetResponses, RunsListData, RunsListErrors, RunsListResponses, RunsNewData, RunsNewErrors, RunsNewResponses, RunsResumeData, RunsResumeErrors, RunsResumeResponses, RunsStageData, RunsStageErrors, RunsStageResponses, RuntimesGetData, RuntimesGetErrors, RuntimesGetResponses, RuntimesListData, RuntimesListErrors, RuntimesListResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, SourcesArchiveData, SourcesArchiveErrors, SourcesArchiveResponses, SourcesEditData, SourcesEditErrors, SourcesEditResponses, SourcesGetData, SourcesGetErrors, SourcesGetResponses, SourcesListData, SourcesListErrors, SourcesListResponses, SourcesNewData, SourcesNewErrors, SourcesNewResponses, SpectrogramGetData, SpectrogramGetErrors, SpectrogramGetResponses, StepKindsGetData, StepKindsGetErrors, StepKindsGetResponses, StepKindsListData, StepKindsListErrors, StepKindsListResponses, StorageGetData, StorageGetErrors, StorageGetResponses, StreamConnectData, StreamConnectErrors, StreamConnectResponses, SweepsRunData, SweepsRunErrors, SweepsRunResponses, TelegramBotSetData, TelegramBotSetErrors, TelegramBotSetResponses, TelegramBotVerifyData, TelegramBotVerifyErrors, TelegramBotVerifyResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, TracksGetData, TracksGetErrors, TracksGetResponses, TranscriptionsNewData, TranscriptionsNewErrors, TranscriptionsNewResponses, TriageAcceptData, TriageAcceptErrors, TriageAcceptResponses, TriageCorrectData, TriageCorrectErrors, TriageCorrectResponses, TriageListData, TriageListErrors, TriageListResponses, TriageRejectData, TriageRejectErrors, TriageRejectResponses, UtterancesGetData, UtterancesGetErrors, UtterancesGetResponses, UtterancesListData, UtterancesListErrors, UtterancesListResponses, UtterancesSearchData, UtterancesSearchErrors, UtterancesSearchResponses, VersionsArchiveData, VersionsArchiveErrors, VersionsArchiveResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WordsGetData, WordsGetErrors, WordsGetResponses, WorkerArtifactsSetData, WorkerArtifactsSetErrors, WorkerArtifactsSetResponses, WorkerLeasesClaimData, WorkerLeasesClaimErrors, WorkerLeasesClaimResponses, WorkerLeasesReleaseData, WorkerLeasesReleaseErrors, WorkerLeasesReleaseResponses, WorkerLeasesReportData, WorkerLeasesReportErrors, WorkerLeasesReportResponses, WorkerLiveConnectData, WorkerLiveConnectErrors, WorkerLiveConnectResponses, WorkerLogsNewData, WorkerLogsNewErrors, WorkerLogsNewResponses, WorkerMetricsNewData, WorkerMetricsNewErrors, WorkerMetricsNewResponses, WorkerOutputsNewData, WorkerOutputsNewErrors, WorkerOutputsNewResponses, WorkerRegistrationsNewData, WorkerRegistrationsNewErrors, WorkerRegistrationsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
+import type { AdoptionsListData, AdoptionsListErrors, AdoptionsListResponses, AgentCredentialsArchiveData, AgentCredentialsArchiveErrors, AgentCredentialsArchiveResponses, AgentCredentialsGetData, AgentCredentialsGetErrors, AgentCredentialsGetResponses, AgentCredentialsListData, AgentCredentialsListErrors, AgentCredentialsListResponses, AgentCredentialsSetData, AgentCredentialsSetErrors, AgentCredentialsSetResponses, AgentCredentialsVerifyData, AgentCredentialsVerifyErrors, AgentCredentialsVerifyResponses, AgentMessagesListData, AgentMessagesListErrors, AgentMessagesListResponses, AgentMessagesNewData, AgentMessagesNewErrors, AgentMessagesNewResponses, AgentModelsListData, AgentModelsListErrors, AgentModelsListResponses, AgentProfileEditData, AgentProfileEditErrors, AgentProfileEditResponses, AgentProfileGetData, AgentProfileGetErrors, AgentProfileGetResponses, AgentProvidersListData, AgentProvidersListErrors, AgentProvidersListResponses, AgentSessionsAcceptData, AgentSessionsAcceptErrors, AgentSessionsAcceptResponses, AgentSessionsCancelData, AgentSessionsCancelErrors, AgentSessionsCancelResponses, AgentSessionsGetData, AgentSessionsGetErrors, AgentSessionsGetResponses, AgentSessionsListData, AgentSessionsListErrors, AgentSessionsListResponses, AgentSessionsNewData, AgentSessionsNewErrors, AgentSessionsNewResponses, AgentSessionsPauseData, AgentSessionsPauseErrors, AgentSessionsPauseResponses, AgentSessionsResumeData, AgentSessionsResumeErrors, AgentSessionsResumeResponses, AgentSessionsRevertData, AgentSessionsRevertErrors, AgentSessionsRevertResponses, AliasesGetData, AliasesGetErrors, AliasesGetResponses, AliasesListData, AliasesListErrors, AliasesListResponses, AliasesSetData, AliasesSetErrors, AliasesSetResponses, AnnotationsNewData, AnnotationsNewErrors, AnnotationsNewResponses, ApprovalsApproveData, ApprovalsApproveErrors, ApprovalsApproveResponses, ApprovalsDenyData, ApprovalsDenyErrors, ApprovalsDenyResponses, ApprovalsGetData, ApprovalsGetErrors, ApprovalsGetResponses, ApprovalsListData, ApprovalsListErrors, ApprovalsListResponses, ArtifactsEvictData, ArtifactsEvictErrors, ArtifactsEvictResponses, ArtifactsGetData, ArtifactsGetErrors, ArtifactsGetResponses, AudioGetData, AudioGetErrors, AudioGetResponses, AudioSignData, AudioSignErrors, AudioSignResponses, AuditListData, AuditListErrors, AuditListResponses, AuthAcceptData, AuthAcceptErrors, AuthAcceptResponses, AuthGetData, AuthGetErrors, AuthGetResponses, AuthLoginData, AuthLoginErrors, AuthLoginResponses, AuthLogoutData, AuthLogoutErrors, AuthLogoutResponses, AuthSetupData, AuthSetupErrors, AuthSetupResponses, AuxiliariesGetData, AuxiliariesGetErrors, AuxiliariesGetResponses, AuxiliariesListData, AuxiliariesListErrors, AuxiliariesListResponses, BackupsGetData, BackupsGetErrors, BackupsGetResponses, BackupsListData, BackupsListErrors, BackupsListResponses, BackupsNewData, BackupsNewErrors, BackupsNewResponses, BackupsVerifyData, BackupsVerifyErrors, BackupsVerifyResponses, BaseModelsGetData, BaseModelsGetErrors, BaseModelsGetResponses, BaseModelsListData, BaseModelsListErrors, BaseModelsListResponses, BatchesFreezeData, BatchesFreezeErrors, BatchesFreezeResponses, BatchesGetData, BatchesGetErrors, BatchesGetResponses, BatchesListData, BatchesListErrors, BatchesListResponses, BatchesNewData, BatchesNewErrors, BatchesNewResponses, BatchItemsAcceptData, BatchItemsAcceptErrors, BatchItemsAcceptResponses, BatchItemsGetData, BatchItemsGetErrors, BatchItemsGetResponses, BatchItemsListData, BatchItemsListErrors, BatchItemsListResponses, BoostEditData, BoostEditErrors, BoostEditResponses, BranchesAcceptData, BranchesAcceptErrors, BranchesAcceptResponses, BranchesCompareData, BranchesCompareErrors, BranchesCompareResponses, BranchesGetData, BranchesGetErrors, BranchesGetResponses, BranchesListData, BranchesListErrors, BranchesListResponses, BranchesRevertData, BranchesRevertErrors, BranchesRevertResponses, BundlesAdoptData, BundlesAdoptErrors, BundlesAdoptResponses, CheckpointsAverageData, CheckpointsAverageErrors, CheckpointsAverageResponses, CheckpointsGetData, CheckpointsGetErrors, CheckpointsGetResponses, CheckpointsListData, CheckpointsListErrors, CheckpointsListResponses, CollectionsGetData, CollectionsGetErrors, CollectionsGetResponses, CollectionsListData, CollectionsListErrors, CollectionsListResponses, ComputeEditData, ComputeEditErrors, ComputeEditResponses, ComputeGetData, ComputeGetErrors, ComputeGetResponses, ComputeListData, ComputeListErrors, ComputeListResponses, CredentialsListData, CredentialsListErrors, CredentialsListResponses, CredentialsNewData, CredentialsNewErrors, CredentialsNewResponses, CredentialsRevokeData, CredentialsRevokeErrors, CredentialsRevokeResponses, DatasetsEvictData, DatasetsEvictErrors, DatasetsEvictResponses, DatasetsExportData, DatasetsExportErrors, DatasetsExportResponses, DatasetsFreezeData, DatasetsFreezeErrors, DatasetsFreezeResponses, DatasetsGetData, DatasetsGetErrors, DatasetsGetResponses, DatasetsListData, DatasetsListErrors, DatasetsListResponses, DatasetsMaterializeData, DatasetsMaterializeErrors, DatasetsMaterializeResponses, DatasetsPreviewData, DatasetsPreviewErrors, DatasetsPreviewResponses, DefaultsGetData, DefaultsGetErrors, DefaultsGetResponses, DeliveryGetData, DeliveryGetErrors, DeliveryGetResponses, DeploymentsGetData, DeploymentsGetErrors, DeploymentsGetResponses, DeploymentsListData, DeploymentsListErrors, DeploymentsListResponses, DeploymentsNewData, DeploymentsNewErrors, DeploymentsNewResponses, DeploymentsPromoteData, DeploymentsPromoteErrors, DeploymentsPromoteResponses, DeploymentsRollbackData, DeploymentsRollbackErrors, DeploymentsRollbackResponses, DeploymentTargetsArchiveData, DeploymentTargetsArchiveErrors, DeploymentTargetsArchiveResponses, DeploymentTargetsEditData, DeploymentTargetsEditErrors, DeploymentTargetsEditResponses, DeploymentTargetsGetData, DeploymentTargetsGetErrors, DeploymentTargetsGetResponses, DeploymentTargetsListData, DeploymentTargetsListErrors, DeploymentTargetsListResponses, DeploymentTargetsNewData, DeploymentTargetsNewErrors, DeploymentTargetsNewResponses, DraftsAcceptData, DraftsAcceptErrors, DraftsAcceptResponses, DraftsGetData, DraftsGetErrors, DraftsGetResponses, DraftsListData, DraftsListErrors, DraftsListResponses, DraftsRevertData, DraftsRevertErrors, DraftsRevertResponses, EgressHostsListData, EgressHostsListErrors, EgressHostsListResponses, EvalsGateData, EvalsGateErrors, EvalsGateResponses, EvalsGetData, EvalsGetErrors, EvalsGetResponses, EvalsListData, EvalsListErrors, EvalsListResponses, EvalsNewData, EvalsNewErrors, EvalsNewResponses, EventsListData, EventsListErrors, EventsListResponses, ExperimentsGetData, ExperimentsGetErrors, ExperimentsGetResponses, ExperimentsListData, ExperimentsListErrors, ExperimentsListResponses, ExperimentsNewData, ExperimentsNewErrors, ExperimentsNewResponses, ExportsGetData, ExportsGetErrors, ExportsGetResponses, ExportsListData, ExportsListErrors, ExportsListResponses, GatesEditData, GatesEditErrors, GatesEditResponses, GatesGetData, GatesGetErrors, GatesGetResponses, GoldenSetsAlignData, GoldenSetsAlignErrors, GoldenSetsAlignResponses, GoldenSetsFreezeData, GoldenSetsFreezeErrors, GoldenSetsFreezeResponses, GoldenSetsGetData, GoldenSetsGetErrors, GoldenSetsGetResponses, GoldenSetsListData, GoldenSetsListErrors, GoldenSetsListResponses, GuidelinesGetData, GuidelinesGetErrors, GuidelinesGetResponses, HelpGetData, HelpGetErrors, HelpGetResponses, HelpSearchData, HelpSearchErrors, HelpSearchResponses, HostCredentialsClaimData, HostCredentialsClaimErrors, HostCredentialsClaimResponses, HostCredentialsReportData, HostCredentialsReportErrors, HostCredentialsReportResponses, HostSessionsAskData, HostSessionsAskErrors, HostSessionsAskResponses, HostSessionsClaimData, HostSessionsClaimErrors, HostSessionsClaimResponses, HostSessionsDecisionData, HostSessionsDecisionErrors, HostSessionsDecisionResponses, HostSessionsReleaseData, HostSessionsReleaseErrors, HostSessionsReleaseResponses, HostSessionsReportData, HostSessionsReportErrors, HostSessionsReportResponses, InvitationsListData, InvitationsListErrors, InvitationsListResponses, InvitationsNewData, InvitationsNewErrors, InvitationsNewResponses, JobLogsListData, JobLogsListErrors, JobLogsListResponses, JobsCancelData, JobsCancelErrors, JobsCancelResponses, JobsEditData, JobsEditErrors, JobsEditResponses, JobsGetData, JobsGetErrors, JobsGetResponses, JobsListData, JobsListErrors, JobsListResponses, JobsPauseData, JobsPauseErrors, JobsPauseResponses, JobsResumeData, JobsResumeErrors, JobsResumeResponses, JobsWaitData, JobsWaitErrors, JobsWaitResponses, LangpacksEditData, LangpacksEditErrors, LangpacksEditResponses, LangpacksGetData, LangpacksGetErrors, LangpacksGetResponses, LangpacksListData, LangpacksListErrors, LangpacksListResponses, MeGetData, MeGetErrors, MeGetResponses, MetricsGetData, MetricsGetErrors, MetricsGetResponses, MixesEditData, MixesEditErrors, MixesEditResponses, MixesGetData, MixesGetErrors, MixesGetResponses, MixesListData, MixesListErrors, MixesListResponses, MixesNewData, MixesNewErrors, MixesNewResponses, MixesPreviewData, MixesPreviewErrors, MixesPreviewResponses, ModelFamiliesGetData, ModelFamiliesGetErrors, ModelFamiliesGetResponses, ModelFamiliesListData, ModelFamiliesListErrors, ModelFamiliesListResponses, ModelsBenchmarkData, ModelsBenchmarkErrors, ModelsBenchmarkResponses, ModelsExportData, ModelsExportErrors, ModelsExportResponses, ModelsGetData, ModelsGetErrors, ModelsGetResponses, ModelsListData, ModelsListErrors, ModelsListResponses, ModelsParityData, ModelsParityErrors, ModelsParityResponses, ModelsRegisterData, ModelsRegisterErrors, ModelsRegisterResponses, MountsGetData, MountsGetErrors, MountsGetResponses, MountsListData, MountsListErrors, MountsListResponses, MountsNewData, MountsNewErrors, MountsNewResponses, MountsScanData, MountsScanErrors, MountsScanResponses, MountsVerifyData, MountsVerifyErrors, MountsVerifyResponses, NormalizersGetData, NormalizersGetErrors, NormalizersGetResponses, NormalizersListData, NormalizersListErrors, NormalizersListResponses, NotificationRulesEditData, NotificationRulesEditErrors, NotificationRulesEditResponses, NotificationRulesListData, NotificationRulesListErrors, NotificationRulesListResponses, NotificationSettingsEditData, NotificationSettingsEditErrors, NotificationSettingsEditResponses, NotificationSettingsGetData, NotificationSettingsGetErrors, NotificationSettingsGetResponses, PeaksGetData, PeaksGetErrors, PeaksGetResponses, PipelineRunsCancelData, PipelineRunsCancelErrors, PipelineRunsCancelResponses, PipelineRunsGetData, PipelineRunsGetErrors, PipelineRunsGetResponses, PipelineRunsListData, PipelineRunsListErrors, PipelineRunsListResponses, PipelineRunsRetryData, PipelineRunsRetryErrors, PipelineRunsRetryResponses, PipelineRunsWaitData, PipelineRunsWaitErrors, PipelineRunsWaitResponses, PipelinesListData, PipelinesListErrors, PipelinesListResponses, PipelinesRunData, PipelinesRunErrors, PipelinesRunResponses, PlaybooksGetData, PlaybooksGetErrors, PlaybooksGetResponses, PlaybooksListData, PlaybooksListErrors, PlaybooksListResponses, PlaybooksRunData, PlaybooksRunErrors, PlaybooksRunResponses, PoliciesEditData, PoliciesEditErrors, PoliciesEditResponses, PoliciesGetData, PoliciesGetErrors, PoliciesGetResponses, ProjectsAdoptData, ProjectsAdoptErrors, ProjectsAdoptResponses, ProjectsArchiveData, ProjectsArchiveErrors, ProjectsArchiveResponses, ProjectsEditData, ProjectsEditErrors, ProjectsEditResponses, ProjectsExportData, ProjectsExportErrors, ProjectsExportResponses, ProjectsGetData, ProjectsGetErrors, ProjectsGetResponses, ProjectsListData, ProjectsListErrors, ProjectsListResponses, ProjectsNewData, ProjectsNewErrors, ProjectsNewResponses, ProjectsNoteData, ProjectsNoteErrors, ProjectsNoteResponses, ProjectsSearchData, ProjectsSearchErrors, ProjectsSearchResponses, ProjectsSyncData, ProjectsSyncErrors, ProjectsSyncResponses, PromotionsGetData, PromotionsGetErrors, PromotionsGetResponses, PromotionsListData, PromotionsListErrors, PromotionsListResponses, PromotionsVerifyData, PromotionsVerifyErrors, PromotionsVerifyResponses, QueueEntriesListData, QueueEntriesListErrors, QueueEntriesListResponses, RecipesEditData, RecipesEditErrors, RecipesEditResponses, RecipesGetData, RecipesGetErrors, RecipesGetResponses, RecipesListData, RecipesListErrors, RecipesListResponses, RecipesNewData, RecipesNewErrors, RecipesNewResponses, RegistryLineageData, RegistryLineageErrors, RegistryLineageResponses, RegistrySearchData, RegistrySearchErrors, RegistrySearchResponses, RunsCalibrateData, RunsCalibrateErrors, RunsCalibrateResponses, RunsGetData, RunsGetErrors, RunsGetResponses, RunsListData, RunsListErrors, RunsListResponses, RunsNewData, RunsNewErrors, RunsNewResponses, RunsResumeData, RunsResumeErrors, RunsResumeResponses, RunsStageData, RunsStageErrors, RunsStageResponses, RuntimesGetData, RuntimesGetErrors, RuntimesGetResponses, RuntimesListData, RuntimesListErrors, RuntimesListResponses, SecretsListData, SecretsListErrors, SecretsListResponses, SecretsNewData, SecretsNewErrors, SecretsNewResponses, ShadowReplaysGetData, ShadowReplaysGetErrors, ShadowReplaysGetResponses, ShadowReplaysListData, ShadowReplaysListErrors, ShadowReplaysListResponses, ShadowReplaysNewData, ShadowReplaysNewErrors, ShadowReplaysNewResponses, SourcesArchiveData, SourcesArchiveErrors, SourcesArchiveResponses, SourcesEditData, SourcesEditErrors, SourcesEditResponses, SourcesGetData, SourcesGetErrors, SourcesGetResponses, SourcesListData, SourcesListErrors, SourcesListResponses, SourcesNewData, SourcesNewErrors, SourcesNewResponses, SpectrogramGetData, SpectrogramGetErrors, SpectrogramGetResponses, StepKindsGetData, StepKindsGetErrors, StepKindsGetResponses, StepKindsListData, StepKindsListErrors, StepKindsListResponses, StorageGetData, StorageGetErrors, StorageGetResponses, StreamConnectData, StreamConnectErrors, StreamConnectResponses, SweepsRunData, SweepsRunErrors, SweepsRunResponses, TelegramBotSetData, TelegramBotSetErrors, TelegramBotSetResponses, TelegramBotVerifyData, TelegramBotVerifyErrors, TelegramBotVerifyResponses, TemplatesGetData, TemplatesGetErrors, TemplatesGetResponses, TemplatesListData, TemplatesListErrors, TemplatesListResponses, TextsGetData, TextsGetErrors, TextsGetResponses, TotpConfirmData, TotpConfirmErrors, TotpConfirmResponses, TotpDisableData, TotpDisableErrors, TotpDisableResponses, TotpEnrollData, TotpEnrollErrors, TotpEnrollResponses, TracksGetData, TracksGetErrors, TracksGetResponses, TranscriptionsNewData, TranscriptionsNewErrors, TranscriptionsNewResponses, TriageAcceptData, TriageAcceptErrors, TriageAcceptResponses, TriageCorrectData, TriageCorrectErrors, TriageCorrectResponses, TriageListData, TriageListErrors, TriageListResponses, TriageRejectData, TriageRejectErrors, TriageRejectResponses, UtterancesGetData, UtterancesGetErrors, UtterancesGetResponses, UtterancesListData, UtterancesListErrors, UtterancesListResponses, UtterancesSearchData, UtterancesSearchErrors, UtterancesSearchResponses, VersionsArchiveData, VersionsArchiveErrors, VersionsArchiveResponses, ViewsGetData, ViewsGetErrors, ViewsGetResponses, ViewsListData, ViewsListErrors, ViewsListResponses, ViewsSetData, ViewsSetErrors, ViewsSetResponses, WordsGetData, WordsGetErrors, WordsGetResponses, WorkerArtifactsSetData, WorkerArtifactsSetErrors, WorkerArtifactsSetResponses, WorkerLeasesClaimData, WorkerLeasesClaimErrors, WorkerLeasesClaimResponses, WorkerLeasesReleaseData, WorkerLeasesReleaseErrors, WorkerLeasesReleaseResponses, WorkerLeasesReportData, WorkerLeasesReportErrors, WorkerLeasesReportResponses, WorkerLiveConnectData, WorkerLiveConnectErrors, WorkerLiveConnectResponses, WorkerLogsNewData, WorkerLogsNewErrors, WorkerLogsNewResponses, WorkerMetricsNewData, WorkerMetricsNewErrors, WorkerMetricsNewResponses, WorkerOutputsNewData, WorkerOutputsNewErrors, WorkerOutputsNewResponses, WorkerRegistrationsNewData, WorkerRegistrationsNewErrors, WorkerRegistrationsNewResponses, WorkspacesGetData, WorkspacesGetErrors, WorkspacesGetResponses, WorkspacesListData, WorkspacesListErrors, WorkspacesListResponses, WorkspacesSetData, WorkspacesSetErrors, WorkspacesSetResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -1424,23 +1424,23 @@ export const audioSign = <ThrowOnError extends boolean = false>(options: Options
 /**
  * Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
  *
- * int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+ * int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. Peaks are stored once per audio as a peaks artifact (cadence.peaks/2): the 10 ms base level and, for long audio, coarser levels (×16 each), computed when a dataset version is registered (a frozen version's members, and a draft's segments whose files the control plane reads without a decoder) by the media.peaks job. A request reads only the span it asks for from the coarsest stored level that divides hopMs and pools it; audio with no stored peaks is computed on this request and stored (computed: true).
  *
  */
 export const peaksGet = <ThrowOnError extends boolean = false>(options: Options<PeaksGetData, ThrowOnError>): RequestResult<PeaksGetResponses, PeaksGetErrors, ThrowOnError> => (options.client ?? client).get<PeaksGetResponses, PeaksGetErrors, ThrowOnError>({ url: '/registry/utterances/{id}/peaks', ...options });
 
 /**
- * The spectrogram tile pyramid of an utterance's audio (spectrogram_tiles@1) — its manifest, or one tile
+ * The spectrogram tile pyramid of an utterance's audio — its manifest, or one tile; the first request builds it
  *
- * For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest spectrogram_tiles artifact computed for the utterance's audio. Without tile: the manifest (JSON). With tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). 404 when no pyramid was computed for this audio.
+ * For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest spectrogram_tiles artifact of the utterance's audio at the views.audio settings (or one spectrogram_tiles@1 wrote in a pipeline). Without tile: the manifest (JSON). With tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). When no pyramid exists, a manifest request starts the media.spectrogram job that builds it once in the control plane (any audio the view plays: a stored utterance, a segment or window of a file on a mount) and answers 202 with the job (Retry-After 2); requests while it runs answer the same job, so each audio is built once. A failed build answers media-tiles-failed until media.tiles_retry_s has passed, then builds again; audio longer than media.tiles_max_s is refused. Narrowband audio (8 kHz origin by its estimated bandwidth) keeps bins up to 4 kHz (manifest narrowband, bandwidthHz). A tile request with no pyramid answers 404.
  *
  */
 export const spectrogramGet = <ThrowOnError extends boolean = false>(options: Options<SpectrogramGetData, ThrowOnError>): RequestResult<SpectrogramGetResponses, SpectrogramGetErrors, ThrowOnError> => (options.client ?? client).get<SpectrogramGetResponses, SpectrogramGetErrors, ThrowOnError>({ url: '/registry/utterances/{id}/spectrogram', ...options });
 
 /**
- * An utterance's hypothesis words with times from a hypotheses artifact, marked S/D/I against the reference by a scores artifact
+ * An utterance's hypothesis words with times (marked S/D/I against the reference by a scores artifact) and its reference words at aligned times
  *
- * The audio view's word track for one utterance: its row of a hypotheses artifact (words with start, end and confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference words the hypothesis deleted placed between hypothesis words.
+ * The audio view's word tracks for one utterance: its row of a hypotheses artifact (words with start, end and confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference words the hypothesis deleted placed between hypothesis words. With goldenSet (or alignment), the reference track: the utterance's row of the golden set's newest reference alignment (align_reference) — its words at their aligned times, or the text and the reason when it stayed unaligned. At least one of hypotheses, goldenSet and alignment is required.
  *
  */
 export const wordsGet = <ThrowOnError extends boolean = false>(options: Options<WordsGetData, ThrowOnError>): RequestResult<WordsGetResponses, WordsGetErrors, ThrowOnError> => (options.client ?? client).get<WordsGetResponses, WordsGetErrors, ThrowOnError>({ url: '/registry/utterances/{id}/words', ...options });
@@ -1565,6 +1565,40 @@ export const exportsList = <ThrowOnError extends boolean = false>(options: Optio
  * Get a dataset export with its state, target, files, bytes, mount copies and Hub commit
  */
 export const exportsGet = <ThrowOnError extends boolean = false>(options: Options<ExportsGetData, ThrowOnError>): RequestResult<ExportsGetResponses, ExportsGetErrors, ThrowOnError> => (options.client ?? client).get<ExportsGetResponses, ExportsGetErrors, ThrowOnError>({ url: '/exports/{id}', ...options });
+
+/**
+ * The annotation guidelines a batch pinned — the Markdown file at the batch's commit of the project repository
+ */
+export const guidelinesGet = <ThrowOnError extends boolean = false>(options: Options<GuidelinesGetData, ThrowOnError>): RequestResult<GuidelinesGetResponses, GuidelinesGetErrors, ThrowOnError> => (options.client ?? client).get<GuidelinesGetResponses, GuidelinesGetErrors, ThrowOnError>({ url: '/batches/{id}/guidelines', ...options });
+
+/**
+ * Read a text of the content store the registry names to be read — a dataset version's card (Markdown)
+ */
+export const textsGet = <ThrowOnError extends boolean = false>(options: Options<TextsGetData, ThrowOnError>): RequestResult<TextsGetResponses, TextsGetErrors, ThrowOnError> => (options.client ?? client).get<TextsGetResponses, TextsGetErrors, ThrowOnError>({ url: '/registry/texts/{hash}', ...options });
+
+/**
+ * Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export
+ */
+export const projectsExport = <ThrowOnError extends boolean = false>(options: Options<ProjectsExportData, ThrowOnError>): RequestResult<ProjectsExportResponses, ProjectsExportErrors, ThrowOnError> => (options.client ?? client).post<ProjectsExportResponses, ProjectsExportErrors, ThrowOnError>({
+    url: '/projects/{p}:export',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Import a Cadence project bundle's registry versions this instance lacks and adopt every version the bundle's project adopted into this project (approval for everyone); 201 with the import job
+ */
+export const bundlesAdopt = <ThrowOnError extends boolean = false>(options: Options<BundlesAdoptData, ThrowOnError>): RequestResult<BundlesAdoptResponses, BundlesAdoptErrors, ThrowOnError> => (options.client ?? client).post<BundlesAdoptResponses, BundlesAdoptErrors, ThrowOnError>({
+    url: '/projects/{p}/bundles:adopt',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
 
 /**
  * Hours per language and split of a dataset version after filters (metadata only; nothing is written)
@@ -1764,3 +1798,181 @@ export const triageReject = <ThrowOnError extends boolean = false>(options: Opti
  *
  */
 export const tracksGet = <ThrowOnError extends boolean = false>(options: Options<TracksGetData, ThrowOnError>): RequestResult<TracksGetResponses, TracksGetErrors, ThrowOnError> => (options.client ?? client).get<TracksGetResponses, TracksGetErrors, ThrowOnError>({ url: '/registry/utterances/{id}/tracks', ...options });
+
+/**
+ * Align the reference texts of several golden sets in one pipeline run (word timings for emission delay)
+ */
+export const goldenSetsAlign = <ThrowOnError extends boolean = false>(options: Options<GoldenSetsAlignData, ThrowOnError>): RequestResult<GoldenSetsAlignResponses, GoldenSetsAlignErrors, ThrowOnError> => (options.client ?? client).post<GoldenSetsAlignResponses, GoldenSetsAlignErrors, ThrowOnError>({
+    url: '/projects/{p}/golden-sets:align',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Export a model version for serving, one deployable per latency profile (GPU spend)
+ */
+export const modelsExport = <ThrowOnError extends boolean = false>(options: Options<ModelsExportData, ThrowOnError>): RequestResult<ModelsExportResponses, ModelsExportErrors, ThrowOnError> => (options.client ?? client).post<ModelsExportResponses, ModelsExportErrors, ThrowOnError>({
+    url: '/projects/{p}/models:export',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Check that an export decodes like the model it came from, through the staging server (R31; GPU spend)
+ */
+export const modelsParity = <ThrowOnError extends boolean = false>(options: Options<ModelsParityData, ThrowOnError>): RequestResult<ModelsParityResponses, ModelsParityErrors, ThrowOnError> => (options.client ?? client).post<ModelsParityResponses, ModelsParityErrors, ThrowOnError>({
+    url: '/projects/{p}/models:parity',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Stream audio through the staging server at real-time pace at each concurrency level and judge the latency budget (R31)
+ */
+export const modelsBenchmark = <ThrowOnError extends boolean = false>(options: Options<ModelsBenchmarkData, ThrowOnError>): RequestResult<ModelsBenchmarkResponses, ModelsBenchmarkErrors, ThrowOnError> => (options.client ?? client).post<ModelsBenchmarkResponses, ModelsBenchmarkErrors, ThrowOnError>({
+    url: '/projects/{p}/models:benchmark',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Deployment targets (staging and delivery) with what they serve, their chain head and the instance signing key
+ */
+export const deploymentTargetsList = <ThrowOnError extends boolean = false>(options?: Options<DeploymentTargetsListData, ThrowOnError>): RequestResult<DeploymentTargetsListResponses, DeploymentTargetsListErrors, ThrowOnError> => (options?.client ?? client).get<DeploymentTargetsListResponses, DeploymentTargetsListErrors, ThrowOnError>({ url: '/deployment-targets', ...options });
+
+/**
+ * Ask for a new deployment target (registry approval for everyone, the admin decides)
+ */
+export const deploymentTargetsNew = <ThrowOnError extends boolean = false>(options: Options<DeploymentTargetsNewData, ThrowOnError>): RequestResult<DeploymentTargetsNewResponses, DeploymentTargetsNewErrors, ThrowOnError> => (options.client ?? client).post<DeploymentTargetsNewResponses, DeploymentTargetsNewErrors, ThrowOnError>({
+    url: '/deployment-targets',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Get a deployment target with what it serves and its chain head
+ */
+export const deploymentTargetsGet = <ThrowOnError extends boolean = false>(options: Options<DeploymentTargetsGetData, ThrowOnError>): RequestResult<DeploymentTargetsGetResponses, DeploymentTargetsGetErrors, ThrowOnError> => (options.client ?? client).get<DeploymentTargetsGetResponses, DeploymentTargetsGetErrors, ThrowOnError>({ url: '/deployment-targets/{id}', ...options });
+
+/**
+ * Change a deployment target (registry approval for everyone; a delivery target's chain gets a target-changed record)
+ */
+export const deploymentTargetsEdit = <ThrowOnError extends boolean = false>(options: Options<DeploymentTargetsEditData, ThrowOnError>): RequestResult<DeploymentTargetsEditResponses, DeploymentTargetsEditErrors, ThrowOnError> => (options.client ?? client).patch<DeploymentTargetsEditResponses, DeploymentTargetsEditErrors, ThrowOnError>({
+    url: '/deployment-targets/{id}',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Archive a deployment target (soft, the admin's); it takes no new deployments or promotions, its chain stays
+ */
+export const deploymentTargetsArchive = <ThrowOnError extends boolean = false>(options: Options<DeploymentTargetsArchiveData, ThrowOnError>): RequestResult<DeploymentTargetsArchiveResponses, DeploymentTargetsArchiveErrors, ThrowOnError> => (options.client ?? client).post<DeploymentTargetsArchiveResponses, DeploymentTargetsArchiveErrors, ThrowOnError>({ url: '/deployment-targets/{id}:archive', ...options });
+
+/**
+ * A delivery target's promotion record chain, oldest first, every record re-verified on read
+ */
+export const promotionsList = <ThrowOnError extends boolean = false>(options: Options<PromotionsListData, ThrowOnError>): RequestResult<PromotionsListResponses, PromotionsListErrors, ThrowOnError> => (options.client ?? client).get<PromotionsListResponses, PromotionsListErrors, ThrowOnError>({ url: '/deployment-targets/{id}/promotions', ...options });
+
+/**
+ * A promotion record with its signature, key, state, delivery script and (for people) a signed bundle link
+ */
+export const promotionsGet = <ThrowOnError extends boolean = false>(options: Options<PromotionsGetData, ThrowOnError>): RequestResult<PromotionsGetResponses, PromotionsGetErrors, ThrowOnError> => (options.client ?? client).get<PromotionsGetResponses, PromotionsGetErrors, ThrowOnError>({ url: '/promotions/{id}', ...options });
+
+/**
+ * Confirm a delivery with the receipt line deliver.sh printed (people only); appends a signed confirmation record
+ */
+export const promotionsVerify = <ThrowOnError extends boolean = false>(options: Options<PromotionsVerifyData, ThrowOnError>): RequestResult<PromotionsVerifyResponses, PromotionsVerifyErrors, ThrowOnError> => (options.client ?? client).post<PromotionsVerifyResponses, PromotionsVerifyErrors, ThrowOnError>({
+    url: '/promotions/{id}:verify',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Download a promotion's delivery bundle as a gzipped tar (people only; a signed link needs no session)
+ *
+ * The delivery bundle (cadence.delivery/1) of a promotion record as a .tar.gz: deliver.sh, record.json, record.sig, instance.pub, the model directory, decoding configuration and the smoke set, under one directory named after the record. A request signed by promotions.get (exp, viewer, sig) needs no session and is attributed to its viewer. Every download is written to the audit log. Agents and API keys are refused.
+ *
+ */
+export const deliveryGet = <ThrowOnError extends boolean = false>(options: Options<DeliveryGetData, ThrowOnError>): RequestResult<DeliveryGetResponses, DeliveryGetErrors, ThrowOnError> => (options.client ?? client).get<DeliveryGetResponses, DeliveryGetErrors, ThrowOnError>({ url: '/promotions/{id}/delivery', ...options });
+
+/**
+ * The project's deployments, newest first, with stage, shadow progress and pending promotions
+ */
+export const deploymentsList = <ThrowOnError extends boolean = false>(options: Options<DeploymentsListData, ThrowOnError>): RequestResult<DeploymentsListResponses, DeploymentsListErrors, ThrowOnError> => (options.client ?? client).get<DeploymentsListResponses, DeploymentsListErrors, ThrowOnError>({ url: '/projects/{p}/deployments', ...options });
+
+/**
+ * Deploy a model version's export as a shadow on the staging target, replayed nightly from a calls mount
+ */
+export const deploymentsNew = <ThrowOnError extends boolean = false>(options: Options<DeploymentsNewData, ThrowOnError>): RequestResult<DeploymentsNewResponses, DeploymentsNewErrors, ThrowOnError> => (options.client ?? client).post<DeploymentsNewResponses, DeploymentsNewErrors, ThrowOnError>({
+    url: '/projects/{p}/deployments',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * A deployment with its shadow progress, stage history and pending promotion
+ */
+export const deploymentsGet = <ThrowOnError extends boolean = false>(options: Options<DeploymentsGetData, ThrowOnError>): RequestResult<DeploymentsGetResponses, DeploymentsGetErrors, ThrowOnError> => (options.client ?? client).get<DeploymentsGetResponses, DeploymentsGetErrors, ThrowOnError>({ url: '/deployments/{id}', ...options });
+
+/**
+ * Promote a deployment to canary or production on a delivery target's slot (checks, then an approval, then a signed record and its bundle)
+ */
+export const deploymentsPromote = <ThrowOnError extends boolean = false>(options: Options<DeploymentsPromoteData, ThrowOnError>): RequestResult<DeploymentsPromoteResponses, DeploymentsPromoteErrors, ThrowOnError> => (options.client ?? client).post<DeploymentsPromoteResponses, DeploymentsPromoteErrors, ThrowOnError>({
+    url: '/deployments/{id}:promote',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Roll a canary or production deployment back to the slot's earlier production version (approval, signed record, small script)
+ */
+export const deploymentsRollback = <ThrowOnError extends boolean = false>(options: Options<DeploymentsRollbackData, ThrowOnError>): RequestResult<DeploymentsRollbackResponses, DeploymentsRollbackErrors, ThrowOnError> => (options.client ?? client).post<DeploymentsRollbackResponses, DeploymentsRollbackErrors, ThrowOnError>({
+    url: '/deployments/{id}:rollback',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * A shadow deployment's nightly replays, newest first, with the divergence of each night
+ */
+export const shadowReplaysList = <ThrowOnError extends boolean = false>(options: Options<ShadowReplaysListData, ThrowOnError>): RequestResult<ShadowReplaysListResponses, ShadowReplaysListErrors, ThrowOnError> => (options.client ?? client).get<ShadowReplaysListResponses, ShadowReplaysListErrors, ThrowOnError>({ url: '/deployments/{id}/shadow-replays', ...options });
+
+/**
+ * Replay the newest unreplayed calls of a shadow deployment now, instead of waiting for the night (GPU spend)
+ */
+export const shadowReplaysNew = <ThrowOnError extends boolean = false>(options: Options<ShadowReplaysNewData, ThrowOnError>): RequestResult<ShadowReplaysNewResponses, ShadowReplaysNewErrors, ThrowOnError> => (options.client ?? client).post<ShadowReplaysNewResponses, ShadowReplaysNewErrors, ThrowOnError>({ url: '/deployments/{id}/shadow-replays', ...options });
+
+/**
+ * One night's shadow replay with its most divergent segments (texts kept deploy.shadow_artifact_retention_days)
+ */
+export const shadowReplaysGet = <ThrowOnError extends boolean = false>(options: Options<ShadowReplaysGetData, ThrowOnError>): RequestResult<ShadowReplaysGetResponses, ShadowReplaysGetErrors, ThrowOnError> => (options.client ?? client).get<ShadowReplaysGetResponses, ShadowReplaysGetErrors, ThrowOnError>({ url: '/shadow-replays/{id}', ...options });

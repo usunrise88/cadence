@@ -644,10 +644,11 @@ Write before starting:
       invitations per batch (play, no download), Annotation batch, double annotation 10 %, adjudication,
       inter-annotator WER ≤ 5 %, freeze as the telephone golden set (built on synthetic calls:
       `golden-set/calls-synth-sr`); entity spans for names and addresses; end-of-utterance metric from per-channel VAD
-- [ ] For long audio (call recordings): waveform peaks at ingest and freeze, the spectrogram tile pyramid on demand,
+- [x] For long audio (call recordings): waveform peaks at ingest and freeze, the spectrogram tile pyramid on demand,
       an estimated bandwidth per utterance so 8 kHz-origin audio is shown to 4 kHz (R51, R52); energy/VAD and channel
-      tracks — partial: bandwidth, energy/VAD and channel tracks are built (`tracks.get`, computed on request); peaks
-      at ingest and freeze and the tile-pyramid job are open (notes below)
+      tracks — bandwidth, energy/VAD and channel tracks from `tracks.get` (computed on request); peaks stored when a
+      version is registered (`media.peaks`, multi-level) and the pyramid built on first view (`media.spectrogram`),
+      both control-plane jobs (notes below)
 - [x] A reference alignment step (NeMo Forced Aligner, per the **decide** above) so golden sets carry word timings for
       the reference track; emission delay PR50/PR90 joins the scorers (R54) — `align_reference@1` uses omniASR CTC
       emissions with torchaudio's aligner (NFA reads only NeMo checkpoints); `latency_score@3`
@@ -673,16 +674,17 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   tars; Shar is `shar_export@1`. `datasets.freeze` reruns the draft step in cut mode and checks the project quota.
   Ingest VAD is an energy VAD per channel in the core; ITN in `text_normalise@1` is a literal list. "No licence, no
   ingest" is enforced at planning and in the draft hook.
-- Auxiliary payloads carry `roles[]`, engine, conditions and `service.tokenSecret`; five seeds. LID uses Whisper's
-  language token (speechbrain/torchaudio conflict with the NeMo runtime's torch); OASIS writes lower case without
+- Auxiliary payloads carry `roles[]`, engine, conditions and `service.tokenSecret`; five seeds. LID is
+  `lid_classify@2` in runtime `omni` (VoxLingua107; phase-4 tail below); OASIS writes lower case without
   punctuation and wins the pick when it agrees (`vote`), so pseudo-labels can lose case and punctuation (07). Whisper
   writes Serbian in Cyrillic: the pipeline transliterates `sr-Cyrl-Latn`.
 - Registry: `versions.archive` (terminal, refused while in use); adoption checks licence and locale (unless
   `purpose: replay`); `data.lock` resolutions are reported (`PlanStep.locked`), not substituted; step-kind
   deprecation comes from the pack, with no `deprecate` verb.
 - Imports: `dataset_import@4` copies into the content store and freezes at import (Lhotse cuts/Shar, NeMo
-  offset/duration, the bundle, `mount://` on path mounts); only `sdp_ingest` indexes in place. The bundle is per
-  dataset version, not per project. Hub pushes need `hub-export`, private by default.
+  offset/duration, the bundle, `mount://` on path mounts); only `sdp_ingest` indexes in place. The dataset bundle is
+  per dataset version; the project bundle came in the phase-4 tail (below). Hub pushes need `hub-export`, private by
+  default.
 - Annotation: Triage is a tool panel (a queue). Annotators pull in their own hashed order; adjudication folds case and
   punctuation (not the project normalizer, `annotation.adjudicate_wer` 0); `foreign`/`unintelligible` items are
   excluded. Guidelines are pinned at HEAD; reviewers see the path and commit. Reviewers are invited by the admin
@@ -692,15 +694,36 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   (`pipelines/align-reference.yaml`); `latency_score@3` reports emission delay or `n/a` with a reason; `srp_Latn` is
   not in omniASR's list.
 - Playbooks gain `person:`, `optional:`, `when:`; `weekly-flywheel` is available from phase 5; "Try Cadence" imports
-  FLEURS from the Hub; `cadence smoke --project SLUG` (`make e2e` needs `SMOKE_PROJECT`). `defaults.yaml` is version 15.
+  FLEURS from the Hub; `cadence smoke --project SLUG` (`make e2e` needs `SMOKE_PROJECT`). `defaults.yaml` is version 16.
 - Corpora: `scripts/corpora/` (`fleurs.sh`, `calls_synth.py`); `fleurs-sr` and `calls-synth-sr` (40 calls, G.711 μ-law
   stereo) on the stand; `sdp_ingest` on them gives 577 segments (315 caller, 262 bot), turn coverage ≈ 80 %.
-- Open: waveform peaks at ingest and freeze (computed on first view); the spectrogram tile-pyramid job (tiles per
-  request); guidelines text for reviewers (no operation serves it); dataset card rendering (no operation serves CAS
-  text); an export UI (API only); dry runs do not say "needs materialize"; the audio view's reference-word track; the
-  project-level bundle; the VoxLingua107 LID image; end-of-utterance gaps are not in the dataset manifest; aligning
-  the replay golden sets on the stand; a nightly omni GPU run; Playwright
-  e2e for annotation; `recipes/` lacks `annotation/guidelines/`.
+- Closed in the phase-4 tail (UI stream, 2026-10-04): reviewers read the guidelines text in the Annotate view
+  (`guidelines.get`, the file at the batch's pinned commit; a reviewer's session reaches it for its own batch only);
+  the Dataset version document renders its card (`texts.get`: only a blob a registry version names as text to read,
+  256 KiB, sanitised Markdown via `@/shell/markdown`); an export UI there (Export card: plan, then export; Hub:
+  approval; the version's exports with state and files); dry runs of `runs.new|stage` and `pipelines.run` warn
+  `needs-materialize` (version, bytes and mounts to copy back) instead of refusing — the real call is still refused —
+  and `pipelineRuns.get` lists `needsMaterialize`, shown with **Materialize** in Mix, Run and Pipeline run.
+- Done on the stand (2026-10-05): the replay golden sets are aligned — one `goldenSets.align` run (32 sets, 9 599 of
+  9 600 utterances; `plr_01a107dc…`) plus `nb-no` once alignment folded macrolanguages.
+- Open: `web/e2e/training-panels.spec.ts` (not in `make ui-e2e`) is stale: its scripted worker publishes
+  `dataset_import@1` while the bundled import pipeline pins `@4`.
+- Closed in the phase 4 tail (2026-10-04, migration 0045; 06 "Media", 00 decision log):
+  - Waveform peaks are stored when a dataset version is registered: a second `dataset` output hook queues the
+    control-plane job `media.peaks` (one per version and artifact, so a draft's readable segments and then its frozen
+    cut); peaks files are `cadence.peaks/2` with levels pooled ×16, and `peaks.get` reads only the span it asks for from
+    the coarsest level dividing `hopMs` (`computed: true` marks the first-view fallback, which remains). The audio view
+    reads long audio's overview at a stored level and 10 ms detail around the visible range.
+  - The spectrogram tile pyramid is built once, on the first `spectrogram.get` (`202` with a `media.spectrogram` job;
+    `422 media-tiles-failed` until `media.tiles_retry_s`; `media.tiles_max_s` 4 h), by the control plane with the
+    STFT of `spectrogram_tiles@1` (byte-identical on a cross-check); narrowband audio keeps bins to 4 kHz (manifest
+    `narrowband`, `bandwidthHz`). Not a worker step: windows of mount files have no artifact, utterances no project.
+  - The audio view's reference-word track: `words.get?goldenSet=` (or `alignment=`) answers `reference` from the golden
+    set's newest alignment; Eval report and Diff rows pass the cell's golden set (`&gs=` in selection items).
+  - End-of-utterance gaps: `sdp_ingest` writes `eou` per segment of a split file (per-channel VAD, the annotation
+    item's rule); `dataset_freeze` carries it into `manifest.jsonl` (draft and `cadence.dataset/1`) and `stats.eou`
+    (`datasets.get`), and the card states the gap percentiles. Steps reused by input hash keep their old output
+    (`fresh: true` re-ingests).
 - Found and fixed running the gate on the stand (2026-10-04): every worker binds the mounts (core steps reached
   `worker-services`/`worker-omni`, which had no `/mnt/corpora`); the default preset allows `mounts.verify`; an
   optional step naming an auxiliary the project has not adopted is skipped with a warning; a retry leaves the plan's
@@ -715,10 +738,58 @@ R, I, A, L and B, folded into the spec by stream S on 2026-10-04; the gate is st
   annotation batch on the ingest's segments artifact instead); the Try Cadence playbook asks to clear a source that
   is already cleared; a pseudo-label ensemble with the base model as a member keeps only what the weak member gets
   right (2 454 of 2 944 FLEURS segments disputed, kept labels no better than Whisper alone).
+- Phase-4 tail (stream measure, 2026-10-04): `goldenSets.align` (new verb `align`) aligns several golden sets in one
+  pipeline run, one optional aligning step per dataset artifact, skipping sets already aligned, with an unfinished
+  aligning step, or in a language the adopted aligner lacks (of the 34 replay golden sets only those in he, sr, hr or bs are in
+  omniASR CTC 1B's list), with a known estimate (`eval.align_step_overhead_s` 30 s + `eval.align_seconds_per_audio_hour`
+  15 s; measured 6.9 s per audio hour on 2.12 h), so the batch is one `gpu-spend` decision. NeMo's
+  `endpointing.residue_tokens_at_end` stays 2: 0 and 1 remove the 80 ms one-token finals only by switching end of
+  utterance off (no segment closes before the stream ends; latency to final +385 ms mean at 80 ms; WER unchanged on
+  700 FLEURS sr utterances); a sixth decoder shim (no end of utterance while the newest frame holds a token) removes
+  the splits with endpointing intact and WER unchanged — measured, recommended, not built (07 "Open questions").
 - Closed by the owner's decisions of 2026-10-04 (00 decision log): `pipelines/calls-ingest.yaml` stops at the
   segments (the frame of `batches.new`); a playbook's clearance step ticks from the `sources.get` that found the
   source already cleared; the pseudo-label template votes Whisper + OASIS (`pseudolabel_ensemble@2`, OASIS required,
   Whisper's written-form text kept when the two agree).
+- Phase-4 tail, stream infra (2026-10-04; help `guides.project-bundles`):
+  - Project bundles: `projects.export` writes a project to a writable path mount from a control-plane job (export
+    format `cadence-project-bundle`, migration 0047): `repository.bundle`, `data.lock`, one dataset bundle per dataset
+    version and noise bank, other payload blobs under `cas/`, `bundle.json` last. `bundles.adopt` (an existing
+    project) and `projects.new` with `bundle` (a new one from the bundle's history) import it behind `bundle-import`,
+    an approval for everyone. Versions the instance lacks register under the bundle's version strings; golden sets
+    are re-frozen through this instance's leakage checks; aliases are set where the project has none. Not carried:
+    alignments (re-align with `pipelines/align-reference.yaml`), mount URIs of indexed utterances, work (mixes, runs,
+    evals), a custom `AGENTS.md` of the bundle (re-rendered).
+  - LID is `lid_classify@2` in runtime `omni` (VoxLingua107, `auxiliary/lid-voxlingua107`, speechbrain 1.1.1 over
+    torch 2.8, image size unchanged). The NeMo pack's Whisper `lid_classify@1` is no longer published; Whisper's
+    detection stays the ensemble's second opinion through the member. Templates pin `@2`, so `pseudo-label` needs the
+    VoxLingua107 auxiliary adopted (an approval). On the FLEURS Hebrew fixture it names Slovenian for 2 of 10
+    three-second clips (confidence 0.72 and 0.81, above `pseudolabel.lid_min_confidence`); peak 549 MiB.
+  - `scripts/nightly-gpu.sh` also builds `worker/Dockerfile.omni` from `main` and runs the omni pack's GPU tests
+    (alignment, LID) when 8 GB are free, in the same Telegram summary (`NIGHTLY_SKIP_OMNI=1` turns it off).
+  - Annotation e2e: `web/e2e/annotation.spec.ts` with the stack's `seed-annotation` fixture
+    (`internal/e2etools/seedannotation`): a batch from the API, two items annotated in Triage Annotate mode, a reviewer
+    invitation that sees only its batch, blind double annotation, adjudication, the freeze blockers and the freeze
+    approval. Found: the floating Audio panel covers the Annotation batch document's lower sections; Annotate shows a
+    done item instead of "Nothing left to annotate" once a person's queue is empty (both closed below).
+  - `recipes/projects/hebrew/annotation/guidelines/default.md`: the template adapted to he-IL (no niqqud, plene
+    spelling, prefixes attached, numbers in the pack's written forms).
+- Closed in the phase-4 tail (polish, 2026-10-04; 00 decision log):
+  - A default workspace builds nothing floating: its Floating column is the slot the Audio panel floats in when
+    something opens it, so no empty Audio covers the Annotation batch, Dataset version or Eval report documents;
+    workspace schema 3 drops the Audio float from stored layouts (11 "Default workspaces", 10 "Persistence").
+  - Annotate shows "Nothing left to annotate in this batch." once a person's queue is empty (the server's `next`, never
+    the first item by default); the annotation e2e checks both.
+  - The Dataset version document charts `stats.eou` (End-of-utterance gap: histogram with p50/p90 marks, table view and
+    CSV copy; only when the version has gaps measured).
+  - Annotation and triage windows get their peaks before the first view: `batches.new` queues `media.peaks` for the
+    batch's item windows, and a hook after the triage hook queues it for the windows of the items a segments artifact
+    indexed; the first-view computation stays the fallback (06 "Media").
+  - Tile pyramids the control plane built are kept by last view: `media.tiles_retention_days` (14; `defaults.yaml`
+    version 18), the daily `mediaTiles.retention` queues `artifacts.evict` as the system actor (permanent, no
+    approval), the next view builds them again (02 "Content store", help `guides.freeing-store-space`).
+  - Fixed on the way: the Dataset version's export formats left out `cadence-project-bundle` (a `tsc` error after the
+    infra merge; projects.export's alone).
 
 ---
 
@@ -733,24 +804,32 @@ calls), and a canary promotion is approved in the UI (confirm modal) with its si
 Decide before starting:
 - [ ] **decide** → *R28 · confirm* Retention vs immutability: what happens to frozen versions containing expired production audio (B6)
 - [ ] **decide** → *R28, R29 · confirm* Confirm the proposed defaults: 90-day retention, PII masking rules (00 decision log)
+      — options and recommendations for the owner, with R31's concurrency and R32:
+      `docs/review/2026-10-05-phase-5-decisions.md`; the plan: `docs/review/2026-10-05-phase-5-plan.md`
 
 Write before starting:
-- [ ] **spec** → *R30* Staging serving: how Triton runs on the staging card for shadow replay and benchmarks, beside training
+- [x] **spec** → *R30* Staging serving: how Triton runs on the staging card for shadow replay and benchmarks, beside training
+      — 06 "Staging serving" (2026-10-05); the served model's memory and throughput **TBD spike E1**
 - [ ] **spec** → *R29* PII redaction step: NER model for Hebrew, span alignment to cut audio, what "redacted" guarantees
+      — needs the owner first (decisions brief, R29)
 - [ ] **spec** → *R32 · confirm* The Эра interfaces: samples push payload, operator corrections, dialogue context for the judge,
-      the per-call boost-list field and its cap
-- [ ] **spec** → *R33* What makes a Promotion record "signed"
-- [ ] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
-      neither (04 says only "beyond tolerance"); A3 records the first numbers
+      the per-call boost-list field and its cap — needs Эра first (decisions brief, R32)
+- [x] **spec** → *R33* What makes a Promotion record "signed" — 02 "Promotion records" (2026-10-05)
+- [x] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
+      neither (04 says only "beyond tolerance"); A3 records the first numbers — 03 "Export, parity and benchmark" and
+      `deploy.*` (2026-10-05); the target concurrency (32) stays a placeholder until the owner answers
 
 Deployment
 - [ ] `models.export` (ONNX cache-aware
       encoder/decoder/joint; GGUF where a CPU target exists); `models.parity`; Triton repository with sequence
       batching; `models.benchmark` (p50/p95, RTF, streams per card)
-- [ ] Deployments and Promotions: shadow (nightly replay from the call-recording mount), canary and production as
+- [x] Deployments and Promotions: shadow (nightly replay from the call-recording mount), canary and production as
       approvals; delivery script generated for the production host; rollback by script; boost lists as decode config
+      — streams D3 (records, bundles) and D4 (`deployments.*`, `shadowReplays.*`, migration 0051; 02 "Deployments as
+      built", 03 "Shadow replay"); real shadow hours wait for Эра's recordings mount (R32 е)
 - [ ] Hot words at decode (RNNT phrase boosting), dynamic per-call candidates per the Эра **spec**
-- [ ] Deployment targets declare the families and formats they serve; promotion checks them (R46)
+- [x] Deployment targets declare the families and formats they serve; promotion checks them (R46) — D2 (targets),
+      D4 (the checks, with the engine's card class and server release)
 - [ ] Transcriptions against the staging Triton deployment: production and candidate side by side, live and from
       files (R47); benchmark and shadow charts; PII spans and boosted terms as audio-view tracks (R51, R53)
 
@@ -763,7 +842,8 @@ Flywheel
       "Weekly flywheel", "Improve on telephony", "Fix names and terms" playbooks
 - [ ] Samples push API `POST /projects/{p}/samples` before the first canary
 
-Panels: Model, Shadow, Triage queue (triage mode); Ops workspace.
+Panels: Model, Shadow, Triage queue (triage mode); Ops workspace. — Model's deploy sections, Shadow, Settings →
+Deployment targets and the Ops workspace are built (stream D4); Triage queue mode waits for F2.
 
 ---
 

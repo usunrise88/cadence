@@ -53,7 +53,13 @@ FAMILY = Family(
             "transcribe": "toy_transcribe",
             "materialize": "toy_checkpoint_from_base",
             "live": "toy_live",
+            # Phase 5: an in-process deployable and its served decode keep the export → parity → benchmark seam honest
+            # on a CPU; the parity reference is the family's own transcribe step.
+            "export": "toy_export",
+            "parity": "toy_transcribe",
+            "serve": "toy_serve",
         },
+        "exportFormats": [{"format": "toy-pt-dir", "server": "toy", "default": True}],
         # A live session runs on the CPU (toy_live needs no card); the reservation only matters for GPU kinds.
         "interactive": {"memoryMb": 512},
         "defaultsSection": "packs.toy",

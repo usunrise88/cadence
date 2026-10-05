@@ -1,6 +1,7 @@
 // Spans as selections (R51): `utt:<id>#t=1.20,2.35`, the W3C Media Fragments temporal syntax. The selection item
 // may also carry the eval context the Audio panel uses to show hypothesis words: `&cell=evc_…` (the followed eval
-// document's cell) or `&hyp=b3:…&scores=b3:…` (artifacts directly). Unknown fragment dimensions are ignored, as the
+// document's cell) or `&hyp=b3:…&scores=b3:…` (artifacts directly), and `&gs=ver_…` the golden set whose reference
+// alignment gives the reference word track. Unknown fragment dimensions are ignored, as the
 // Media Fragments rules ask.
 
 export type AudioTarget = {
@@ -9,6 +10,8 @@ export type AudioTarget = {
   start?: number;
   end?: number;
   channel?: number;
+  /** A golden set version (ver_…): its reference alignment gives the reference word track. */
+  goldenSet?: string;
   /** An eval cell (evc_…) of the followed eval document: its hypotheses and scores give the word track. */
   cell?: string;
   hypotheses?: string;
@@ -33,7 +36,7 @@ export function parseClock(s: string): number | undefined {
   return Number(m[1] ?? 0) * 3600 + Number(m[2]) * 60 + Number(m[3]);
 }
 
-/** The selection item for a target: `utt:<id>[#t=a,b][&ch=n][&cell=…|&hyp=…&scores=…]`. */
+/** The selection item for a target: `utt:<id>[#t=a,b][&ch=n][&cell=…|&hyp=…&scores=…][&gs=ver_…]`. */
 export function audioItem(t: AudioTarget): string {
   const parts: string[] = [];
   const tf = spanFragment(t.start, t.end);
@@ -42,6 +45,7 @@ export function audioItem(t: AudioTarget): string {
   if (t.cell) parts.push(`cell=${t.cell}`);
   if (t.hypotheses) parts.push(`hyp=${t.hypotheses}`);
   if (t.scores) parts.push(`scores=${t.scores}`);
+  if (t.goldenSet) parts.push(`gs=${t.goldenSet}`);
   return `utt:${t.utterance}${parts.length ? `#${parts.join("&")}` : ""}`;
 }
 
@@ -66,6 +70,7 @@ export function parseAudioItem(item: string | undefined): AudioTarget | undefine
     else if (k === "cell" && /^evc_[A-Za-z0-9-]+$/.test(v)) out.cell = v;
     else if (k === "hyp" && /^b3:[0-9a-f]{64}$/.test(v)) out.hypotheses = v;
     else if (k === "scores" && /^b3:[0-9a-f]{64}$/.test(v)) out.scores = v;
+    else if (k === "gs" && /^ver_[A-Za-z0-9_-]+$/.test(v)) out.goldenSet = v;
   }
   return out;
 }

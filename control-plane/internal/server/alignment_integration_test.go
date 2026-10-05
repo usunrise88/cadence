@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"testing"
 
@@ -135,6 +136,49 @@ func TestGoldenSetAlignmentAndEmissionDelay(t *testing.T) {
 	if n := e.count("SELECT count(*) FROM reference_alignments"); n != 1 {
 		t.Fatalf("%d reference alignments", n)
 	}
+
+	// The audio view's reference track (words.get, phase 4 tail): a golden utterance's reference words at their
+	// aligned times, by golden set or by alignment artifact; a golden set never aligned has no track.
+	if _, err := e.pool.Exec(ctx, `INSERT INTO sources (id, name, licence, kind, created_by)
+		VALUES ('src_ref', 'ref-fixtures', 'CC-BY-4.0', 'public', '{"kind":"user","id":"usr_admin"}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.pool.Exec(ctx, `INSERT INTO utterances (id, content_hash, source_id, duration_s, language, sample_rate, channels, bytes)
+		VALUES ('utt_ref2', $1, 'src_ref', 5, 'he-IL', 16000, 1, 160044)`, fmt.Sprintf("b3:%064d", 2)); err != nil {
+		t.Fatal(err)
+	}
+	type refTrack struct {
+		Text      string
+		Words     []map[string]any
+		Reference *struct {
+			Artifact, Text, Aligner string
+			Aligned                 bool
+			Words                   []struct {
+				Index      int
+				Word       string
+				Start, End float64
+			}
+		}
+	}
+	var rt refTrack
+	e.ok(e.do("GET", "/api/registry/utterances/utt_ref2/words?goldenSet="+golden["fx-golden-he"], ""), 200, &rt)
+	r2 := rt.Reference
+	if r2 == nil || r2.Artifact != a.Artifact || !r2.Aligned || r2.Aligner != "auxiliary/fx-aligner" || len(r2.Words) != 10 ||
+		r2.Words[5].Word != "2" || r2.Words[5].Index != 5 || math.Abs(r2.Words[5].Start-1.5) > 1e-9 || rt.Text != "" || len(rt.Words) != 0 {
+		t.Fatalf("reference track %+v", rt)
+	}
+	var byArtifact refTrack
+	e.ok(e.do("GET", "/api/registry/utterances/utt_ref2/words?alignment="+a.Artifact, ""), 200, &byArtifact)
+	if byArtifact.Reference == nil || len(byArtifact.Reference.Words) != 10 {
+		t.Fatalf("by artifact %+v", byArtifact)
+	}
+	var unaligned refTrack
+	e.ok(e.do("GET", "/api/registry/utterances/utt_ref2/words?goldenSet="+golden["fx-golden-ru"], ""), 200, &unaligned)
+	if unaligned.Reference != nil {
+		t.Fatalf("a golden set never aligned has a reference track: %+v", unaligned.Reference)
+	}
+	expectProblem(t, e.do("GET", "/api/registry/utterances/utt_ref2/words", ""), 400, "bad-request")
+	expectProblem(t, e.agent("GET", "/api/registry/utterances/utt_ref2/words?goldenSet="+golden["fx-golden-he"], ""), 403, "forbidden")
 
 	// The eval: latency_score@3 gets the alignment for the he cells, none for the ru cells.
 	var ev struct{ ID string }

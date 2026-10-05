@@ -36,12 +36,48 @@ const maxMixBytes = 4 << 20
 //   - dataset: refused when its meta marks an augmented copy of a golden set (golden-set-leakage), when no dataset
 //     version registers it (eval-only-dataset: training reads registered versions only), or when a version that
 //     registers it is not Trainable (eval-only, uncleared source, golden-set leakage); and when the cache evicted it
-//     (artifact-missing, naming datasets.materialize) — so a run's dry run and the queue refuse it, not the lease.
+//     (artifact-missing, naming datasets.materialize) — so the queue refuses it, not the lease. A plan
+//     (TrainableUnlessEvicted) reports it as needs-materialize instead, so a dry run says what to bring back.
 //   - mix: its content must be a cadence.mix/1 rendering (what the worker reads); every dataset version it names
 //     and every dataset artifact it points at passes the checks above. The meta's datasets list is ignored.
 //
 // Other types pass.
 func TrainableArtifact(ctx context.Context, q storage.Querier, store *cas.Store, ref steps.ArtifactRef) error {
+	return trainableArtifact(ctx, q, store, ref, nil)
+}
+
+// Evicted is a dataset version a training input reads whose artifact the cache evicted (its shards are on a mount).
+type Evicted struct {
+	VersionID string
+	Artifact  string
+}
+
+// TrainableUnlessEvicted is TrainableArtifact for a plan: every check but the cache's. The dataset versions the input
+// reads whose artifacts the cache evicted come back instead of the artifact-missing refusal, so a dry run can say what
+// to materialize first (needs-materialize); EvictedRefusal is what a real call answers for them.
+func TrainableUnlessEvicted(ctx context.Context, q storage.Querier, store *cas.Store, ref steps.ArtifactRef) ([]Evicted, error) {
+	ev := []Evicted{}
+	if err := trainableArtifact(ctx, q, store, ref, &ev); err != nil {
+		return nil, err
+	}
+	return ev, nil
+}
+
+// EvictedRefusal is the artifact-missing refusal for an evicted dataset version: training reads only what the cache
+// holds, and the answer names datasets.materialize.
+func EvictedRefusal(ctx context.Context, q storage.Querier, e Evicted) error {
+	name := e.VersionID
+	var collection, version string
+	if q.QueryRow(ctx, `SELECT c.name, v.version FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
+		WHERE v.id = $1`, e.VersionID).Scan(&collection, &version) == nil {
+		name = collection + " " + version + " (" + e.VersionID + ")"
+	}
+	return problems.ArtifactMissing.New("dataset %s was evicted from the cache (artifact %s): its shards are on a mount, and training reads only what the cache holds. Bring it back with datasets.materialize (versionId %s), wait for the job, and run again",
+		name, e.Artifact, e.VersionID)
+}
+
+// trainableArtifact is TrainableArtifact; with ev it collects evicted datasets instead of refusing them.
+func trainableArtifact(ctx context.Context, q storage.Querier, store *cas.Store, ref steps.ArtifactRef, ev *[]Evicted) error {
 	typ, meta := ref.Type, json.RawMessage(nil)
 	a, err := artifacts.Get(ctx, q, ref.Hash)
 	switch pe, ok := problems.As(err); {
@@ -57,15 +93,15 @@ func TrainableArtifact(ctx context.Context, q storage.Querier, store *cas.Store,
 	}
 	switch typ {
 	case ArtifactType:
-		return trainableDataset(ctx, q, ref.Hash, meta)
+		return trainableDataset(ctx, q, ref.Hash, meta, ev)
 	case MixArtifactType:
-		return trainableMix(ctx, q, store, ref.Hash)
+		return trainableMix(ctx, q, store, ref.Hash, ev)
 	}
 	return nil
 }
 
 // trainableDataset checks a dataset artifact (hash, with the meta the index holds) a training step would read.
-func trainableDataset(ctx context.Context, q storage.Querier, hash string, meta json.RawMessage) error {
+func trainableDataset(ctx context.Context, q storage.Querier, hash string, meta json.RawMessage, ev *[]Evicted) error {
 	if Derived(meta) {
 		return problems.GoldenSetLeakage.New("dataset artifact %s is derived (an augmented copy of a golden set made for an eval, purpose %s, or untranscribed segments cut for the pseudo-label members, purpose %s); it can never be trained on",
 			hash, PurposeAugmented, PurposePseudoLabel)
@@ -86,30 +122,34 @@ func trainableDataset(ctx context.Context, q storage.Querier, hash string, meta 
 	if err := trainableVersions(ctx, q, ids); err != nil {
 		return err
 	}
-	return cached(ctx, q, hash, ids[0])
-}
-
-// cached refuses (artifact-missing) a dataset artifact the cache evicted (datasets.evict, the high-water sweep):
-// its shards are on a mount, not in the content store, and a training step would fail mid-lease reading them. The
-// answer names datasets.materialize; the run is not materialised for the caller (a copy back can take hours and
-// counts against the project's quota, so it is a decision of its own).
-func cached(ctx context.Context, q storage.Querier, hash, versionID string) error {
-	var evicted bool
-	err := q.QueryRow(ctx, "SELECT evicted_at IS NOT NULL FROM artifacts WHERE hash = $1", hash).Scan(&evicted)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !evicted) {
+	evicted, err := isEvicted(ctx, q, hash)
+	if err != nil || !evicted {
+		return err
+	}
+	e := Evicted{VersionID: ids[0], Artifact: hash}
+	if ev != nil {
+		if !slices.Contains(*ev, e) {
+			*ev = append(*ev, e)
+		}
 		return nil
 	}
+	return EvictedRefusal(ctx, q, e)
+}
+
+// isEvicted reports whether the cache evicted dataset artifact hash (datasets.evict, the high-water sweep): its
+// shards are on a mount, not in the content store, and a training step would fail mid-lease reading them. A real
+// call refuses it naming datasets.materialize; the run is not materialised for the caller (a copy back can take hours
+// and counts against the project's quota, so it is a decision of its own).
+func isEvicted(ctx context.Context, q storage.Querier, hash string) (bool, error) {
+	var evicted bool
+	err := q.QueryRow(ctx, "SELECT evicted_at IS NOT NULL FROM artifacts WHERE hash = $1", hash).Scan(&evicted)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
 	if err != nil {
-		return fmt.Errorf("read the cache state of %s: %w", hash, err)
+		return false, fmt.Errorf("read the cache state of %s: %w", hash, err)
 	}
-	name := versionID
-	var collection, version string
-	if q.QueryRow(ctx, `SELECT c.name, v.version FROM registry_versions v JOIN registry_collections c ON c.id = v.collection_id
-		WHERE v.id = $1`, versionID).Scan(&collection, &version) == nil {
-		name = collection + " " + version + " (" + versionID + ")"
-	}
-	return problems.ArtifactMissing.New("dataset %s was evicted from the cache (artifact %s): its shards are on a mount, and training reads only what the cache holds. Bring it back with datasets.materialize (versionId %s), wait for the job, and run again",
-		name, hash, versionID)
+	return evicted, nil
 }
 
 // trainableVersions checks that every dataset version id exists and is Trainable.
@@ -148,7 +188,7 @@ type mixEntries struct {
 }
 
 // trainableMix reads the mix artifact hash from the store and checks every dataset it names or points at.
-func trainableMix(ctx context.Context, q storage.Querier, store *cas.Store, hash string) error {
+func trainableMix(ctx context.Context, q storage.Querier, store *cas.Store, hash string, ev *[]Evicted) error {
 	if store == nil {
 		return errors.New("data: no content store to read mix artifacts from")
 	}
@@ -190,7 +230,7 @@ func trainableMix(ctx context.Context, q storage.Querier, store *cas.Store, hash
 			}
 			meta = a.Meta
 		}
-		if err := trainableDataset(ctx, q, h, meta); err != nil {
+		if err := trainableDataset(ctx, q, h, meta, ev); err != nil {
 			return err
 		}
 	}

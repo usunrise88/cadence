@@ -104,6 +104,7 @@ type Line struct {
 	Fingerprints map[string]string `json:"fingerprints,omitempty"`
 	URI          string            `json:"uri,omitempty"`  // where the segment lives on a mount (an ingest's cut)
 	Role         string            `json:"role,omitempty"` // caller | bot | mono (an ingest's cut)
+	EOU          json.RawMessage   `json:"eou,omitempty"`  // end of utterance from per-channel VAD (sdp_ingest; manifest only)
 
 	Hash string `json:"-"` // the audio file's blob hash (resolved from the artifact's manifest)
 	Size int64  `json:"-"`

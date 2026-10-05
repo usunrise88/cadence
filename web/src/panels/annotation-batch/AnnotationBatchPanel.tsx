@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AudioView } from "@/shell/audio";
 import { EmptyState, StatusChip } from "@/shell/entity/primitives";
-import { channelLabel, errorMessage, INVITE_REQUEST, openDocument, runCommand, seconds, useEditRequest, useProject, type PanelProps } from "@/shell/panel";
+import { channelLabel, errorMessage, GuidelinesPane, INVITE_REQUEST, openDocument, runCommand, seconds, useEditRequest, useProject, type PanelProps } from "@/shell/panel";
 
 // The Annotation batch document (docs/spec/11-ui-panels.md "Panel catalogue", Annotation batch; docs/spec/04-blocks.md
 // "Annotation workflow"): the sample and its strata, progress per state, the inter-annotator WER against its target,
@@ -102,6 +102,9 @@ function Overview({ b, doc }: { b: Batch; doc?: string }) {
         <dt className="text-muted-foreground">Due</dt>
         <dd>{b.dueAt ? new Date(b.dueAt).toLocaleDateString() : "—"}</dd>
       </dl>
+      <div className="overflow-hidden rounded-md border">
+        <GuidelinesPane batchId={b.id} />
+      </div>
       <Section id={`progress-${b.id}`} title="Progress">
         <div className="flex h-2 w-full overflow-hidden rounded bg-border" role="img" aria-label={parts.map((x) => `${x.n} ${x.key}`).join(", ")}>
           {parts.map((x) => (x.n > 0 ? <span key={x.key} className={x.cls} style={{ width: `${(x.n / Math.max(1, p.items)) * 100}%` }} /> : null))}

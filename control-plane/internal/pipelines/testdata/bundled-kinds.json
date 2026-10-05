@@ -760,52 +760,36 @@
   "params": {
    "properties": {
     "auxiliary": {
-     "default": "auxiliary/whisper-large-v3",
-     "description": "The language classifier (auxiliary/<name>, ver_… or @alias): an auxiliary with the lid role the project adopted",
+     "default": "auxiliary/lid-voxlingua107",
+     "description": "The language classifier (auxiliary/<name>, ver_… or @alias): an auxiliary with the lid role and engine speechbrain-ecapa the project adopted",
      "title": "Auxiliary",
      "type": "string",
      "x-cadence": {
-      "default": "auxiliary/whisper-large-v3",
-      "defaultRef": "packs.nemo.lid_auxiliary",
-      "description": "The language classifier (auxiliary/<name>, ver_… or @alias): an auxiliary with the lid role the project adopted",
+      "default": "auxiliary/lid-voxlingua107",
+      "defaultRef": "packs.omni.lid_auxiliary",
+      "description": "The language classifier (auxiliary/<name>, ver_… or @alias): an auxiliary with the lid role and engine speechbrain-ecapa the project adopted",
       "range": "any",
       "registryRef": {
        "kind": "auxiliary",
        "role": "lid"
       },
-      "source": "docs/review/2026-10-03-phase-4-plan.md decision 7, with Whisper's language token as the fallback: torchaudio has no build for the nemo-speech image's torch 2.12 (checked 2026-10-03)"
+      "source": "docs/review/2026-10-03-phase-4-plan.md decision 7 (Apache-2.0; VoxLingua107 CC-BY-4.0, checked 2026-10-03)"
      }
     },
     "batch_size": {
-     "default": 8,
-     "description": "Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)",
+     "default": 16,
+     "description": "Utterances per language identification batch (the 21 M-parameter classifier pads a batch to its longest clip)",
      "title": "Batch Size",
      "type": "integer",
      "x-cadence": {
-      "default": 8,
-      "defaultRef": "packs.nemo.lid_batch_size",
-      "description": "Utterances per language identification batch (16 ran out of memory under the 8 GB data-job cap beside the other members on the stand, 2026-10-04)",
+      "default": 16,
+      "defaultRef": "packs.omni.lid_batch_size",
+      "description": "Utterances per language identification batch (the 21 M-parameter classifier pads a batch to its longest clip)",
       "range": {
        "max": 128,
        "min": 1
       },
-      "source": "Cadence recommendation"
-     }
-    },
-    "cuda_context_reserve_mb": {
-     "default": 1024,
-     "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
-     "title": "Cuda Context Reserve Mb",
-     "type": "integer",
-     "x-cadence": {
-      "default": 1024,
-      "defaultRef": "packs.nemo.cuda_context_reserve_mb",
-      "description": "Card memory kept free for the CUDA context and library workspaces, which sit outside PyTorch's allocator; the allocator gets the lease's cap minus this",
-      "range": {
-       "max": 8192,
-       "min": 0
-      },
-      "source": "Spike A3 (a 20.5 GiB allocator cap showed 21.6 GB in nvidia-smi, about 0.65 GB outside the allocator); rounded up"
+      "source": "Cadence recommendation (16 clips of up to 30 s stay far under the 4 GB step reservation)"
      }
     },
     "top_k": {
@@ -815,7 +799,7 @@
      "type": "integer",
      "x-cadence": {
       "default": 3,
-      "defaultRef": "packs.nemo.lid_top_k",
+      "defaultRef": "packs.omni.lid_top_k",
       "description": "Most probable languages kept per utterance in the lid artifact",
       "range": {
        "max": 10,
@@ -832,14 +816,14 @@
    "lid": "lid"
   },
   "resources": {
-   "diskGb": 4,
+   "diskGb": 1,
    "gpu": true,
    "gpus": 1,
    "jobKind": "data",
-   "memoryGb": 8
+   "memoryGb": 4
   },
-  "runtime": "nemo-speech",
-  "version": "1"
+  "runtime": "omni",
+  "version": "2"
  },
  {
   "consumes": {
@@ -2441,6 +2425,23 @@
       "source": "docs/spec/04-blocks.md Block 3 (golden-set audio never reaches training)"
      }
     },
+    "files": {
+     "default": [],
+     "description": "Relative paths under path to read, in this order (the control plane's selection, e.g. a night's shadow replay: newest unreplayed calls first); [] reads every file pattern matches",
+     "items": {
+      "type": "string"
+     },
+     "title": "Files",
+     "type": "array",
+     "x-cadence": {
+      "default": [],
+      "description": "Relative paths under path to read, in this order (the control plane's selection, e.g. a night's shadow replay: newest unreplayed calls first); [] reads every file pattern matches",
+      "range": {
+       "maxLength": 20000
+      },
+      "source": "docs/spec/03-pipelines-defaults.md Shadow replay (phase 5 · D4)"
+     }
+    },
     "language": {
      "default": "",
      "description": "Language of every segment (BCP 47, e.g. sr-RS) unless a file's sidecar names one",
@@ -2693,7 +2694,7 @@
    "gpus": 0,
    "jobKind": "data"
   },
-  "version": "2"
+  "version": "3"
  },
  {
   "consumes": {

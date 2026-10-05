@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from cadence_omni import hub
 from cadence_worker import ctc_align
 from cadence_worker.steps.base import StepInputError
 
@@ -53,13 +54,8 @@ def device() -> str:
 
 
 def snapshot(repo: str, revision: str) -> Path:
-    """The auxiliary's weights: the Hub snapshot at its pinned revision (downloaded once into HF_HOME)."""
-    from huggingface_hub import snapshot_download
-
-    try:
-        return Path(snapshot_download(repo, revision=revision, allow_patterns=["*.pt", "*.model", "*.md"]))
-    except Exception as e:  # network, auth or a missing revision: the step cannot run
-        raise StepInputError(f"cannot fetch {repo}@{revision}: {e}") from e
+    """The auxiliary's weights: the Hub snapshot at its pinned revision (a cache, or downloaded once into HF_HOME)."""
+    return hub.snapshot(repo, revision, ["*.pt", "*.model", "*.md"])
 
 
 def checkpoint_in(snap: Path) -> tuple[Path, Arch]:

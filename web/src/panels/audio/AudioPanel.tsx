@@ -29,9 +29,10 @@ import { EmptyState, PanelToolbar } from "@/shell/entity/primitives";
 import { attachToChat, evalIdOfDoc, useFollowedDoc, type PanelProps } from "@/shell/panel";
 
 // Audio (docs/spec/11-ui-panels.md "Panel catalogue", Audio; R51, R52): the audio view of the span last opened from an
-// Eval report row, Diff or a reference — waveform, spectrogram and the hypothesis word track marked S/I with
-// deletions — played through a short-lived signed link. Play, loop a span, change speed, zoom, spectrogram colormap,
-// axis and range, attach the span to Chat, export the words as TextGrid, CTM or WebVTT. Floating by default.
+// Eval report row, Diff or a reference — waveform, spectrogram, the hypothesis word track marked S/I with
+// deletions and the golden set's reference words at their aligned times — played through a short-lived signed link.
+// Play, loop a span, change speed, zoom, spectrogram colormap, axis and range, attach the span to Chat, export the
+// words as TextGrid, CTM or WebVTT. Floating by default.
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
 
@@ -47,12 +48,12 @@ export function AudioPanel({ instanceId }: PanelProps) {
 }
 
 /** The hypothesis and scores artifacts of a target: given directly, or the eval cell's in the followed Eval report. */
-function useArtifacts(target: AudioTarget, evalDoc: string | undefined): { hypotheses?: string; scores?: string } {
+function useArtifacts(target: AudioTarget, evalDoc: string | undefined): { hypotheses?: string; scores?: string; goldenSet?: string } {
   const evalId = target.cell ? evalIdOfDoc(evalDoc) : undefined;
   const q = useQuery({ ...evalsGetOptions({ path: { id: evalId ?? "" } }), enabled: !!evalId && !target.hypotheses });
-  if (target.hypotheses) return { hypotheses: target.hypotheses, scores: target.scores };
+  if (target.hypotheses) return { hypotheses: target.hypotheses, scores: target.scores, goldenSet: target.goldenSet };
   const cell = q.data?.cells?.find((c) => c.id === target.cell);
-  return { hypotheses: cell?.hypotheses, scores: cell?.scores };
+  return { hypotheses: cell?.hypotheses, scores: cell?.scores, goldenSet: target.goldenSet ?? cell?.goldenSetVersionId };
 }
 
 function download(el: HTMLElement, name: string, text: string, type: string) {
@@ -80,7 +81,7 @@ function AudioTargetView({ target, evalDoc }: { target: AudioTarget; evalDoc?: s
   const [playing, setPlaying] = useState(false);
   const [hover, setHover] = useState(-1);
   const art = useArtifacts(target, evalDoc);
-  const words = useWords(target.utterance, art.hypotheses, art.scores);
+  const words = useWords(target.utterance, art.hypotheses, art.scores, art.goldenSet);
   const settings = useMemo(() => over, [over]);
   const span = useMemo(() => ({ start: target.start, end: target.end }), [target.start, target.end]);
 
@@ -196,6 +197,7 @@ function AudioTargetView({ target, evalDoc }: { target: AudioTarget; evalDoc?: s
           title={`Audio of ${utteranceId ?? target.utterance.slice(0, 12)}`}
           hypotheses={art.hypotheses}
           scores={art.scores}
+          goldenSet={art.goldenSet}
           settings={settings}
           showSpectrogram={showSpec}
           span={span}

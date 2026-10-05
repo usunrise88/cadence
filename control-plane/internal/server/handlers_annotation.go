@@ -67,8 +67,8 @@ func reviewerAllowed(method, path, batch string) bool {
 		return true
 	case p == "/defaults" && get:
 		return true // the audio view's settings (views.audio); configuration, no data
-	case p == "/batches/"+batch && get:
-		return true
+	case p == "/batches/"+batch && get, p == "/batches/"+batch+"/guidelines" && get:
+		return true // the batch and the guidelines file it pinned (nothing else of the repository)
 	case strings.HasPrefix(p, "/batches/"+batch+"/batch-items") && (get || post):
 		return true
 	case strings.HasPrefix(p, "/registry/utterances/bit_") && (get || post):
@@ -148,6 +148,12 @@ func (s *Server) BatchesNew(ctx context.Context, req api.BatchesNewRequestObject
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
+		// The items' windows get their peaks now (media.peaks), so an annotator's first view does not compute them.
+		peaks, err := s.media.EnqueueBatchPeaks(ctx, tx, v.ID)
+		if err != nil {
+			return commands.Result{}, nil, err
+		}
+		drafts = append(drafts, peaks...)
 		got, err := s.annotation.Get(ctx, tx, v.ID)
 		if err != nil {
 			return commands.Result{}, nil, err

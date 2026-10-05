@@ -31,7 +31,7 @@ func TestCalibrationCacheTrust(t *testing.T) {
 	e.ok(e.do("POST", "/api/projects/cal/runs:calibrate", `{"baseModel":"`+pipelinestest.BaseModel+`","mix":"he-mix"}`,
 		"Idempotency-Key", e.key()), 201, &cal)
 	e.waitPipelineRun(cal.PipelineRun.ID, "done")
-	key := fmt.Sprintf("base_model = '%s' AND card_class = 'blackwell-48gb' AND memory_cap_gb = 22 AND precision = 'bf16'", pipelinestest.BaseModel)
+	key := fmt.Sprintf("base_model = '%s' AND card_class = 'blackwell-96gb' AND memory_cap_gb = 20 AND precision = 'bf16'", pipelinestest.BaseModel)
 	if n := e.count("SELECT count(*) FROM calibrations WHERE seconds_per_step = 0.5 AND " + key); n != 1 {
 		t.Fatalf("runs.calibrate cached %d calibrations of the key", n)
 	}
@@ -76,7 +76,7 @@ func TestCalibrationCacheTrust(t *testing.T) {
 	}{
 		{name: "ad-hoc pipeline keyed by its metadata", reason: "not measured by runs.calibrate",
 			out: steps.Output{PipelineRunID: "plr_adhoc", StepID: "pls_adhoc", Artifact: fast(map[string]any{
-				"baseModel": pipelinestest.BaseModel, "cardClass": "blackwell-48gb", "memoryCapGb": 22, "precision": "bf16"}),
+				"baseModel": pipelinestest.BaseModel, "cardClass": "blackwell-96gb", "memoryCapGb": 20, "precision": "bf16"}),
 				Spec: steps.Spec{Kind: pipelinestest.KindCalibrate, Inputs: baseIn}}},
 		{name: "another kind in the run's recipe", reason: "is not fx_calibrate, the calibrate role",
 			out: steps.Output{PipelineRunID: r.PipelineRunID, StepID: "pls_train", RunID: r.ID, Artifact: fast(map[string]any{}),

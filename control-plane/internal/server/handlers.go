@@ -273,6 +273,14 @@ func optional(s string) *string {
 	return &s
 }
 
+// optionalFloat is v, or nil for zero.
+func optionalFloat(v float64) *float64 {
+	if v == 0 {
+		return nil
+	}
+	return &v
+}
+
 func writeJSON(w http.ResponseWriter, r *http.Request, log *slog.Logger, status int, v any) {
 	b, err := json.Marshal(v)
 	if err != nil {

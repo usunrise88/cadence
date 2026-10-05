@@ -5,6 +5,9 @@ import type { DefaultWorkspaceName } from "./schema";
 // Default workspaces are code factories, not stored JSON, so "Reset to default" always matches the current
 // registry (docs/spec/10-ui-shell.md "Persistence"). The table follows docs/spec/11-ui-panels.md "Default
 // workspaces"; panels that do not exist yet are skipped, and every workspace opens the Project home in the centre.
+// The Floating column is a slot, not a panel to open: a floating tool (Audio) opens there on first use (openAudio from
+// a row, a reference, a search hit), never when the workspace is built, so no empty window covers the centre
+// documents (the annotation e2e found the Audio float over the Annotation batch, Dataset version and Eval report).
 
 type Slot = { panel: string; location: Location };
 
@@ -73,6 +76,7 @@ export function planDefaultLayout(name: DefaultWorkspaceName, registry: PanelReg
   for (const s of TABLE[name]) {
     const m = registry.get(s.panel);
     if (!m || m.kind === "document") continue; // documents need an entity; they open from Library or links
+    if (s.location === "floating") continue; // a slot: the panel floats when something opens it
     if (m.inDefaults && !m.inDefaults()) continue;
     out.push({ panel: s.panel, location: s.location });
   }

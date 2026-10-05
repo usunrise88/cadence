@@ -28,19 +28,23 @@ Entities:
   batches        freeze get list new
   boost          edit
   branches       accept compare get list revert
+  bundles        adopt
   checkpoints    average get list
   collections    get list
   compute        edit get list
   credentials    list new revoke
   datasets       evict export freeze get list materialize preview
   defaults       get
+  deploymentTargets archive edit get list new
+  deployments    get list new promote rollback
   drafts         accept get list revert
   evals          gate get list new
   events         list
   experiments    get list new
   exports        get list
   gates          edit get
-  goldenSets     freeze get list
+  goldenSets     align freeze get list
+  guidelines     get
   help           get search
   invitations    list new
   jobLogs        list
@@ -49,7 +53,7 @@ Entities:
   metrics        get
   mixes          edit get list new preview
   modelFamilies  get list
-  models         get list register
+  models         benchmark export get list parity register
   mounts         get list new scan verify
   normalizers    get list
   notificationRules edit list
@@ -58,19 +62,22 @@ Entities:
   pipelines      list run
   playbooks      get list run
   policies       edit get
-  projects       adopt archive edit get list new note search sync
+  projects       adopt archive edit export get list new note search sync
+  promotions     get list verify
   queueEntries   list
   recipes        edit get list new
   registry       lineage search
   runs           calibrate get list new resume stage
   runtimes       get list
   secrets        list new
+  shadowReplays  get list new
   sources        archive edit get list new
   stepKinds      get list
   storage        get
   sweeps         run
   telegramBot    set verify
   templates      get list
+  texts          get
   triage         accept correct list reject
   utterances     get list search
   versions       archive

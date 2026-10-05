@@ -21,6 +21,8 @@ import (
 
 	"github.com/usunrise88/cadence/control-plane/internal/artifacts"
 	"github.com/usunrise88/cadence/control-plane/internal/cas"
+	"github.com/usunrise88/cadence/control-plane/internal/defaults"
+	"github.com/usunrise88/cadence/control-plane/internal/jobs"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
@@ -33,7 +35,7 @@ const ServeRate = 16000
 const (
 	TypePeaks            = "peaks"
 	TypeSpectrogramTiles = "spectrogram_tiles"
-	PeaksFormat          = "cadence.peaks/1"
+	PeaksFormat          = "cadence.peaks/2"
 	TilesManifest        = "manifest.json"
 )
 
@@ -73,11 +75,30 @@ func Lookup(ctx context.Context, q storage.Querier, ref string) (Utterance, erro
 			coalesce((SELECT min(uri) FROM utterance_uris x WHERE x.utterance_id = u.id), '')
 		FROM utterances u WHERE u.id = $1 OR u.content_hash = $1 LIMIT 1`, ref).
 		Scan(&u.ID, &u.Hash, &u.Duration, &u.SampleRate, &u.Channels, &u.URI)
+	if errors.Is(err, pgx.ErrNoRows) && strings.HasPrefix(ref, "b3:") {
+		return lookupShadowSegment(ctx, q, ref)
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Utterance{}, problems.NotFound.New("no utterance %q in the registry", ref)
 	}
 	if err != nil {
 		return Utterance{}, fmt.Errorf("look up utterance %s: %w", ref, err)
+	}
+	return u, nil
+}
+
+// lookupShadowSegment finds a segment a shadow replay cut (phase 5 · stream D4: its canonical 16 kHz mono WAV in the
+// content store), while its night's texts are kept (deploy.shadow_artifact_retention_days): the Shadow panel opens
+// the most divergent segments in Audio by their hash.
+func lookupShadowSegment(ctx context.Context, q storage.Querier, hash string) (Utterance, error) {
+	u := Utterance{Target: -1, ID: hash, Hash: hash, SampleRate: 16000, Channels: 1}
+	err := q.QueryRow(ctx, `SELECT s.duration_s, r.project_id FROM shadow_segments s JOIN shadow_replays r ON r.id = s.replay_id
+		WHERE s.hash = $1 AND r.texts_evicted_at IS NULL LIMIT 1`, hash).Scan(&u.Duration, &u.ProjectID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Utterance{}, problems.NotFound.New("no utterance %q in the registry", hash)
+	}
+	if err != nil {
+		return Utterance{}, fmt.Errorf("look up shadow segment %s: %w", hash, err)
 	}
 	return u, nil
 }
@@ -93,6 +114,19 @@ type Service struct {
 	// Conversions bounds the conversions running at once (a buffered channel used as a semaphore; nil: no bound).
 	// One more answers 429 media-busy.
 	Conversions chan struct{}
+	// Jobs runs media.peaks and media.spectrogram (Register sets it); nil: nothing is precomputed or built.
+	Jobs *jobs.Service
+	// Builds bounds the media jobs computing at once (a semaphore; nil: no bound): they wait for a slot.
+	Builds chan struct{}
+	// Defaults are the defaults the jobs and tile settings read (defaults.Get when nil).
+	Defaults func() *defaults.Defaults
+}
+
+func (s *Service) defaults() *defaults.Defaults {
+	if s.Defaults != nil {
+		return s.Defaults()
+	}
+	return defaults.Get()
 }
 
 // busyRetryAfter is the Retry-After (seconds) of media-busy: a 10-minute span converts in well under that.
@@ -269,16 +303,6 @@ func (s *Service) Info(u Utterance) (Info, error) {
 	return info, nil
 }
 
-type peaksMeta struct {
-	Format     string  `json:"format"`
-	Audio      string  `json:"audio"`
-	Channels   int     `json:"channels"`
-	HopS       float64 `json:"hopS"`
-	Frames     int     `json:"frames"`
-	SampleRate int     `json:"sampleRate"`
-	Clipped    []int   `json:"clipped,omitempty"`
-}
-
 // cached returns the newest live artifact of type typ computed for audio (meta.audio), "" when none.
 func cached(ctx context.Context, q storage.Querier, typ, audio string) (artifacts.Artifact, bool, error) {
 	rows, err := q.Query(ctx, `SELECT hash FROM artifacts WHERE type = $1 AND meta->>'audio' = $2 AND evicted_at IS NULL
@@ -300,54 +324,65 @@ func cached(ctx context.Context, q storage.Querier, typ, audio string) (artifact
 	return a, true, nil
 }
 
-// Peaks returns the 10 ms peaks of the utterance's audio: from the newest peaks artifact of the audio when the
-// store holds it, otherwise computed from the audio and recorded as one (a registry artifact, meta.audio = the
-// audio's hash), so the next view reads them.
-func (s *Service) Peaks(ctx context.Context, u Utterance) (Peaks, string, int, error) {
+// PeaksOf returns the stored peaks of the utterance's audio: the newest peaks artifact of the audio when the store
+// holds it, otherwise computed from the audio and recorded as one (a registry artifact, meta.audio = the audio's key;
+// meta.source names who stored it), so later views read them. Computed is set when this call computed them.
+func (s *Service) PeaksOf(ctx context.Context, u Utterance, source string) (StoredPeaks, error) {
+	if s.CAS == nil {
+		return StoredPeaks{}, problems.NotImplemented.New("this control plane has no content store")
+	}
 	if a, ok, err := cached(ctx, s.Pool, TypePeaks, u.Hash); err != nil {
-		return Peaks{}, "", 0, err
+		return StoredPeaks{}, err
 	} else if ok {
-		var m peaksMeta
-		if err := json.Unmarshal(a.Meta, &m); err == nil && m.Format == PeaksFormat && m.HopS > 0 {
-			if b, err := s.readBlob(a.Hash); err == nil {
-				if p, err := PeaksFromBytes(b, m.Channels, m.HopS); err == nil {
-					p.Clipped = m.Clipped
-					return p, a.Hash, m.SampleRate, nil
-				}
+		if m, ok := decodeMeta(a.Meta); ok {
+			if has, size, err := s.CAS.Has(a.Hash); err == nil && has && size >= int64(m.Frames*2*m.Channels) {
+				return s.stored(a.Hash, m), nil
 			}
 		}
 	}
 	f, info, err := s.open(u)
 	if err != nil {
-		return Peaks{}, "", 0, err
+		return StoredPeaks{}, err
 	}
 	defer func() { _ = f.Close() }()
 	p, err := ComputePeaks(f, info)
 	if err != nil {
-		return Peaks{}, "", 0, err
+		return StoredPeaks{}, err
 	}
 	if info.Only != nil {
 		p = p.Channel(*info.Only)
 	}
-	b := p.Bytes()
+	b, levels := EncodePeaksFile(p)
+	m := peaksMeta{Format: PeaksFormat, Audio: u.Hash, Channels: p.Channels, HopS: p.HopS, Frames: p.Frames(),
+		SampleRate: info.SampleRate, Clipped: p.Clipped, Levels: levels, Source: source}
+	out := StoredPeaks{Computed: true, meta: m, data: b}
 	hash, err := s.CAS.PutBytes(b)
 	if err != nil {
-		return Peaks{}, "", 0, fmt.Errorf("store peaks of %s: %w", u.ID, err)
+		return out, nil // the peaks are right either way; the next view computes them again
 	}
-	meta, err := json.Marshal(peaksMeta{Format: PeaksFormat, Audio: u.Hash, Channels: p.Channels, HopS: p.HopS,
-		Frames: p.Frames(), SampleRate: info.SampleRate, Clipped: p.Clipped})
+	meta, err := json.Marshal(m)
 	if err != nil {
-		return Peaks{}, "", 0, fmt.Errorf("encode peaks meta: %w", err)
+		return StoredPeaks{}, fmt.Errorf("encode peaks meta: %w", err)
 	}
 	err = pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
 		_, err := artifacts.Record(ctx, tx, s.CAS, steps.ArtifactRef{Hash: hash, Type: TypePeaks, Size: int64(len(b)), Meta: meta}, "", nil)
 		return err
 	})
-	if err != nil {
-		// The peaks are right either way; a failed index only means the next view computes them again.
-		return p, "", info.SampleRate, nil
+	if err == nil {
+		out.Artifact = hash
 	}
-	return p, hash, info.SampleRate, nil
+	return out, nil
+}
+
+// stored reads a recorded peaks file in ranges from the content store.
+func (s *Service) stored(hash string, m peaksMeta) StoredPeaks {
+	return StoredPeaks{Artifact: hash, meta: m, open: func() (io.ReaderAt, func(), error) {
+		f, err := s.CAS.Open(hash)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open peaks %s: %w", hash, err)
+		}
+		return f, func() { _ = f.Close() }, nil
+	}}
 }
 
 func (s *Service) readBlob(hash string) ([]byte, error) {
@@ -370,18 +405,18 @@ func (s *Service) FindTiles(ctx context.Context, u Utterance) (Tiles, error) {
 	if s.CAS == nil {
 		return Tiles{}, problems.NotImplemented.New("this control plane has no content store")
 	}
-	a, ok, err := cached(ctx, s.Pool, TypeSpectrogramTiles, u.Hash)
+	hash, ok, err := newestTiles(ctx, s.Pool, u.Hash, TileSettingsOf(s.defaults()).Key())
 	if err != nil {
 		return Tiles{}, err
 	}
-	if !ok || !a.Directory {
-		return Tiles{}, problems.NotFound.New("no spectrogram tiles were computed for the audio of %s; the audio view computes the spectrogram in the browser up to views.audio.browser_stft_max_s", u.ID)
+	if !ok {
+		return Tiles{}, problems.NotFound.New("no spectrogram tiles were built for the audio of %s; ask spectrogram.get for the manifest to build them", u.ID)
 	}
-	m, err := s.CAS.ReadManifest(a.Hash)
+	m, err := s.CAS.ReadManifest(hash)
 	if err != nil {
-		return Tiles{}, problems.NotFound.New("the spectrogram tiles of %s (%s) are not in the content store", u.ID, a.Hash)
+		return Tiles{}, problems.NotFound.New("the spectrogram tiles of %s (%s) are not in the content store", u.ID, hash)
 	}
-	return Tiles{Artifact: a.Hash, Manifest: m}, nil
+	return Tiles{Artifact: hash, Manifest: m}, nil
 }
 
 // File returns the bytes of one file of the pyramid (manifest.json or c<ch>/l<L>/<i>.u8).

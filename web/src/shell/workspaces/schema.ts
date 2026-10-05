@@ -3,7 +3,7 @@ import { PLACEHOLDER_PANEL, type PanelParams, type PanelRegistry } from "@/shell
 // docs/spec/10-ui-shell.md "Persistence": a workspace is versioned data that survives panel renames and Dockview
 // upgrades. The layout is Dockview's own serialization; everything else is ours.
 
-export const WORKSPACE_SCHEMA_VERSION = 2;
+export const WORKSPACE_SCHEMA_VERSION = 3;
 export const DEFAULT_WORKSPACES = ["Training", "Eval", "Data", "Triage", "Ops"] as const;
 export type DefaultWorkspaceName = (typeof DEFAULT_WORKSPACES)[number];
 
@@ -67,12 +67,58 @@ export function addChatToRightColumn(layout: SerializedLayout): SerializedLayout
   };
 }
 
+/** The panels a default workspace keeps in a floating slot that opens on first use, not when the workspace is built. */
+export const ON_DEMAND_FLOATS = ["audio"] as const;
+
+type FloatingGroup = { data?: { views: string[]; activeView?: string; id: string; [k: string]: unknown }; [k: string]: unknown };
+
+/**
+ * Schema 3: a default workspace no longer opens its floating Audio when it is built (docs/spec/11-ui-panels.md "Default
+ * workspaces": the floating column is where the panel opens on first use). Layouts saved before kept an empty Audio
+ * floating over the centre documents (found by the annotation e2e, 2026-10-04); its target never survives a reload, so
+ * the restored panel was always empty. The migration takes those panels out of single-group floating windows (a
+ * window left empty goes); docked ones and nested floating grids stay as the person arranged them.
+ */
+export function dropOnDemandFloats(layout: SerializedLayout, ids: readonly string[] = ON_DEMAND_FLOATS): SerializedLayout {
+  const panels = layout.panels ?? {};
+  const drop = new Set(Object.entries(panels).filter(([, p]) => ids.includes(String(p.params?.panel))).map(([id]) => id));
+  const floats = (layout.floatingGroups ?? []) as FloatingGroup[];
+  if (isPlaceholderLayout(layout) || drop.size === 0 || floats.length === 0) return layout;
+  const removed = new Set<string>();
+  const goneGroups = new Set<string>();
+  const kept: FloatingGroup[] = [];
+  for (const f of floats) {
+    const views = f.data?.views;
+    if (!f.data || !views || !views.some((v) => drop.has(v))) {
+      kept.push(f);
+      continue;
+    }
+    const rest = views.filter((v) => !drop.has(v));
+    views.filter((v) => drop.has(v)).forEach((v) => removed.add(v));
+    if (rest.length === 0) {
+      goneGroups.add(f.data.id);
+      continue;
+    }
+    const activeView = f.data.activeView && rest.includes(f.data.activeView) ? f.data.activeView : rest[0];
+    kept.push({ ...f, data: { ...f.data, views: rest, activeView } });
+  }
+  if (removed.size === 0) return layout;
+  const out: SerializedLayout = {
+    ...layout,
+    floatingGroups: kept,
+    panels: Object.fromEntries(Object.entries(panels).filter(([id]) => !removed.has(id))),
+  };
+  if (typeof layout.activeGroup === "string" && goneGroups.has(layout.activeGroup)) delete out.activeGroup;
+  return out;
+}
+
 /**
  * migrations[n] upgrades a workspace from schema n to n+1. Add one when the stored shape changes; never edit an
  * existing one. Version 1 is the first stored shape.
  */
 export const migrations: Readonly<Record<number, Migration>> = {
   1: (w) => ({ ...w, layout: addChatToRightColumn(w.layout) }),
+  2: (w) => ({ ...w, layout: dropOnDemandFloats(w.layout) }),
 };
 
 export class WorkspaceSchemaError extends Error {}

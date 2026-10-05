@@ -18,6 +18,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/agentcreds"
 	"github.com/usunrise88/cadence/control-plane/internal/api"
 	"github.com/usunrise88/cadence/control-plane/internal/auth"
+	"github.com/usunrise88/cadence/control-plane/internal/bundles"
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -69,6 +70,17 @@ func (s *Server) ProjectsNew(ctx context.Context, req api.ProjectsNewRequestObje
 	w := wizardOf(req.Body)
 	dry := dryRun(req.Params.DryRun)
 	cmd := command(ctx, "projects.new", req.Params.IdempotencyKey, req.Params.DryRun)
+	if w.Bundle != "" {
+		// A project from a bundle registers the bundle's versions: the admin's approval (preset rule bundle-import).
+		// The bundle is read before anyone is asked.
+		if _, err := svc.PlanProject(ctx, s.Pool, w); err != nil {
+			return nil, err
+		}
+		if cmd.PathParams == nil {
+			cmd.PathParams = map[string]string{}
+		}
+		cmd.PathParams[bundles.GateParam] = bundles.GateValue
+	}
 	return s.run(ctx, cmd, func(ctx context.Context, tx pgx.Tx) (commands.Result, []events.Draft, error) {
 		plan, err := svc.PlanProject(ctx, tx, w)
 		if err != nil {
@@ -88,7 +100,7 @@ func (s *Server) ProjectsNew(ctx context.Context, req api.ProjectsNewRequestObje
 			return commands.Result{}, nil, errors.New("the job service is not configured")
 		}
 		job, jd, err := s.Jobs.Enqueue(ctx, tx, jobs.Spec{Kind: bootstrap.Kind, ProjectID: p.ID,
-			Args: bootstrap.Args{ProjectID: p.ID, Repository: plan.Repository}})
+			Args: bootstrap.Args{ProjectID: p.ID, Repository: plan.Repository, Bundle: plan.Bundle}})
 		if err != nil {
 			return commands.Result{}, nil, err
 		}
@@ -116,6 +128,7 @@ func wizardOf(b *api.ProjectNew) bootstrap.Wizard {
 		w.PermissionPreset = deref(a.PermissionPreset)
 	}
 	w.InstructionsTemplate = deref(b.InstructionsTemplate)
+	w.Bundle = deref(b.Bundle)
 	if r := b.Repository; r != nil {
 		if r.Kind != nil {
 			w.Repository.Kind = string(*r.Kind)

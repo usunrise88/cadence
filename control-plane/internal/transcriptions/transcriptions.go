@@ -46,6 +46,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/registry"
 	"github.com/usunrise88/cadence/control-plane/internal/repos"
 	"github.com/usunrise88/cadence/control-plane/internal/runs"
+	"github.com/usunrise88/cadence/control-plane/internal/serving"
 	"github.com/usunrise88/cadence/control-plane/internal/steps"
 	"github.com/usunrise88/cadence/control-plane/internal/storage"
 )
@@ -56,6 +57,11 @@ const (
 	Kind = "transcription"
 	// RoleLive is the family role whose step kind serves sessions.
 	RoleLive = "live"
+	// RoleServe is the family role whose step kind streams to a served model; in relay mode it serves the sessions
+	// whose targets are deployments (06 "Staging serving", R47).
+	RoleServe = "serve"
+	// ModeRelay is the serve kind's mode for a live session.
+	ModeRelay = "relay"
 	// EnvLiveToken is the lease environment variable holding the token the worker dials with.
 	EnvLiveToken = "CADENCE_LIVE_TOKEN" //nolint:gosec // a variable name, not a credential
 	// HeaderLiveToken carries that token on workerLive.connect.
@@ -100,8 +106,31 @@ type Service struct {
 	Timing Timing
 	// Wake tells waiting claims that the queue changed (workers.Service.Wake); nil when there is none.
 	Wake func()
+	// Deployments resolves a target of kind deployment (phase 5 · stream D4's deployments); nil refuses them.
+	Deployments Deployments
+	// Serving checks that the staging target serves a deployment's export and is up (phase 5 · stream D2).
+	Serving *serving.Service
 
 	hub hub
+}
+
+// Deployment is a deployment as a lane needs it: what it serves and through which staging target (R47).
+type Deployment struct {
+	ID                 string
+	ProjectID          string
+	Label              string // e.g. the model version and the stage
+	ModelVersionID     string
+	BaseModelVersionID string // the model version's base model: its family and locale tags
+	CheckpointID       string // the checkpoint the model version was registered from ("" when unknown)
+	Profile            string // the export's latency profile
+	Format             string // the export's deployable format
+	Deployable         steps.ArtifactRef
+	TargetID           string // the staging target that serves it
+}
+
+// Deployments resolves a deployment of a project (dep_…); internal/deployments implements it (phase 5 · wave 2).
+type Deployments interface {
+	Resolve(ctx context.Context, q storage.Querier, projectID, id string) (Deployment, error)
 }
 
 // Timing holds the relay's clocks.
@@ -163,6 +192,7 @@ type TargetIn struct {
 	CheckpointID       string
 	ModelVersionID     string
 	BaseModelVersionID string
+	DeploymentID       string // phase 5 (R47): a deployment served by the staging target
 	Profile            string
 	Language           string
 	Boost              string
@@ -276,6 +306,8 @@ type Plan struct {
 	gpu      bool
 	slug     string
 	priority int
+	// servedTarget is the staging target the session's deployment lanes stream to ("" for a live-role session).
+	servedTarget string
 }
 
 // ---------------------------------------------------------------- family descriptors
@@ -332,6 +364,8 @@ type target struct {
 	// under, from its run's language parameter: the default the lane decodes in, so a model fine-tuned under a
 	// neighbour's prompt (Serbian under hr-HR) is heard as it was trained.
 	trainedLang string
+	// deployment is set for a target of kind deployment: the lane decodes through the staging server.
+	deployment *Deployment
 }
 
 // trainParamsLang names the train-step parameters that carry the training language (runs.CheckLanguages reads the
@@ -382,16 +416,18 @@ func laneLanguage(asked, trained string, locales []string) string {
 func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projects.Project, i int, t TargetIn) (target, error) {
 	at := fmt.Sprintf("/targets/%d", i)
 	n := 0
-	for _, v := range []string{t.CheckpointID, t.ModelVersionID, t.BaseModelVersionID} {
+	for _, v := range []string{t.CheckpointID, t.ModelVersionID, t.BaseModelVersionID, t.DeploymentID} {
 		if strings.TrimSpace(v) != "" {
 			n++
 		}
 	}
 	if n != 1 {
 		return target{}, problems.Validation([]problems.FieldError{{Path: at,
-			Message: "name exactly one of checkpointId (ckp_…), modelVersionId or baseModelVersionId"}})
+			Message: "name exactly one of checkpointId (ckp_…), modelVersionId, baseModelVersionId or deploymentId (dep_…)"}})
 	}
 	switch {
+	case t.DeploymentID != "":
+		return s.resolveDeployment(ctx, q, p, strings.TrimSpace(t.DeploymentID))
 	case t.CheckpointID != "":
 		id := strings.TrimSpace(t.CheckpointID)
 		c, err := runs.GetCheckpoint(ctx, q, id)
@@ -478,6 +514,42 @@ func (s *Service) resolveTarget(ctx context.Context, q storage.Querier, p projec
 		return target{kind: "base_model", id: v.ID, label: v.Name + " " + v.Version, weightsKey: "base:" + v.ID, family: f, base: v,
 			artifact: ref}, nil
 	}
+}
+
+// resolveDeployment resolves a target of kind deployment (R47): the deployment's export, the base model of its model
+// version (family and locale tags) and the staging target that serves it.
+func (s *Service) resolveDeployment(ctx context.Context, q storage.Querier, p projects.Project, id string) (target, error) {
+	if s.Deployments == nil {
+		return target{}, problems.NotFound.New("the project has no deployment %q (deployments.new creates a shadow deployment on the staging target)", id)
+	}
+	dep, err := s.Deployments.Resolve(ctx, q, p.ID, id)
+	if err != nil {
+		return target{}, err
+	}
+	if dep.ProjectID != "" && dep.ProjectID != p.ID {
+		return target{}, problems.NotFound.New("the project has no deployment %q", id)
+	}
+	if dep.Deployable.Type != steps.TypeDeployable || !steps.ValidHash(dep.Deployable.Hash) {
+		return target{}, problems.Conflict.New("deployment %s has no exported deployable to serve", id)
+	}
+	base, err := registry.GetVersion(ctx, q, registry.KindBaseModel, dep.BaseModelVersionID)
+	if err != nil {
+		return target{}, err
+	}
+	f, err := familyOf(ctx, q, base)
+	if err != nil {
+		return target{}, err
+	}
+	lang, err := trainedLanguage(ctx, q, dep.CheckpointID)
+	if err != nil {
+		return target{}, err
+	}
+	label := dep.Label
+	if label == "" {
+		label = dep.ID
+	}
+	return target{kind: "deployment", id: dep.ID, label: label, weightsKey: dep.Deployable.Hash, family: f, base: base,
+		trainedLang: lang, artifact: dep.Deployable, deployment: &dep}, nil
 }
 
 // knowsLanguage reports whether a base model whose tags list locale:<code> (none: unknown, so yes) decodes lang; a
@@ -714,9 +786,29 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 		resolved = append(resolved, r)
 	}
 	f := resolved[0].family
-	kindName, err := f.Role(RoleLive)
+	served := 0 // lanes that decode through the staging server
+	for _, r := range resolved {
+		if r.deployment != nil {
+			served++
+		}
+	}
+	if served > 0 && served < len(resolved) {
+		return problems.Validation([]problems.FieldError{{Path: "/targets", Message: "a session's targets are all deployments or none: " +
+			"deployment lanes decode through the staging server, the others on a card, and one job serves a session"}})
+	}
+	role := RoleLive
+	if served > 0 {
+		role = RoleServe
+		for i, r := range resolved[1:] {
+			if r.deployment.TargetID != resolved[0].deployment.TargetID {
+				return problems.Validation([]problems.FieldError{{Path: fmt.Sprintf("/targets/%d", i+1), Message: fmt.Sprintf(
+					"deployment %s is served by another target than %s: one relay job streams to one staging server", r.id, resolved[0].id)}})
+			}
+		}
+	}
+	kindName, err := f.Role(role)
 	if err != nil {
-		return problems.FamilyUnavailable.New("model family %s names no step kind for the live role: its runtime's pack cannot serve transcription sessions", f.Name)
+		return problems.FamilyUnavailable.New("model family %s names no step kind for the %s role: its runtime's pack cannot serve transcription sessions of these targets", f.Name, role)
 	}
 	k, err := runs.RoleKind(ctx, q, kindName)
 	if err != nil {
@@ -730,7 +822,21 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 	for i, r := range resolved {
 		at := fmt.Sprintf("/targets/%d", i)
 		ln := Lane{Kind: r.kind, ID: r.id, Label: r.label, Family: f.Name, WeightsKey: r.weightsKey}
-		prof, ok := chooseProfile(d, f.Profiles, in[i].Profile)
+		want := in[i].Profile
+		if dep := r.deployment; dep != nil {
+			// A deployment decodes at its export's profile: the attention context is baked into the export.
+			if w := strings.TrimSpace(want); w != "" && w != dep.Profile {
+				fields = append(fields, problems.FieldError{Path: at + "/profile", Message: fmt.Sprintf(
+					"deployment %s serves its export's profile %s, not %s (each export is one profile)", dep.ID, dep.Profile, w)})
+			}
+			want = dep.Profile
+			if s.Serving != nil {
+				if _, err := s.Serving.Check(ctx, q, dep.TargetID, serving.Deployable{Family: f.Name, Format: dep.Format, Profile: dep.Profile}); err != nil {
+					return err
+				}
+			}
+		}
+		prof, ok := chooseProfile(d, f.Profiles, want)
 		if !ok {
 			names := make([]string, 0, len(f.Profiles))
 			for _, pr := range f.Profiles {
@@ -761,10 +867,14 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 		}
 		ln.Language = lang
 		if b := strings.TrimSpace(in[i].Boost); b != "" && b != "none" {
-			if f.Boosting == "" || !consumes(k, typeBoostList) {
+			switch {
+			case r.deployment != nil:
+				fields = append(fields, problems.FieldError{Path: at + "/boost", Message: "a deployment decodes with the boost lists its promotion " +
+					"ships as decoding configuration; a per-session list waits for the served model's boost field (R32)"})
+			case f.Boosting == "" || !consumes(k, typeBoostList):
 				fields = append(fields, problems.FieldError{Path: at + "/boost", Message: fmt.Sprintf(
 					"model family %s (live step %s) does not decode with a boost list", f.Name, k.Ref())})
-			} else {
+			default:
 				boost, ref, err := s.boostList(ctx, p, at+"/boost", b, in[i].BoostWeight)
 				if err != nil {
 					var pe *problems.Error
@@ -784,8 +894,11 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 		name, seen := models[r.weightsKey]
 		if !seen {
 			prefix := "model"
-			if r.artifact.Type == typeBaseModel {
+			switch r.artifact.Type {
+			case typeBaseModel:
 				prefix = "base"
+			case steps.TypeDeployable:
+				prefix = "deployable"
 			}
 			name = fmt.Sprintf("%s.%d", prefix, len(models))
 			models[r.weightsKey] = name
@@ -813,6 +926,13 @@ func (s *Service) targets(ctx context.Context, q storage.Querier, p projects.Pro
 	}
 	if len(models) > 1 {
 		mem += f.ExtraMB * (len(models) - 1)
+	}
+	if served > 0 {
+		// The relay holds no model of its own: the session reserves the served models, from the serving reserve.
+		pl.servedTarget = resolved[0].deployment.TargetID
+		if sv, ok := steps.ServedOf(steps.Spec{Inputs: pl.inputs}, serving.FallbackMB(d)); ok {
+			mem = sv.MemoryMB
+		}
 	}
 	if pl.gpu {
 		pl.ReservationMB = mem
@@ -943,6 +1063,9 @@ type liveParams struct {
 	MaxFileSeconds int           `json:"maxFileSeconds"`
 	MaxFileBytes   int           `json:"maxFileBytes"`
 	FrameMs        int           `json:"frameMs"`
+	// Mode and Target are the serve role's (deployment lanes): relay mode, through this staging target.
+	Mode   string `json:"mode,omitempty"`
+	Target string `json:"target,omitempty"`
 }
 
 type targetParam struct {
@@ -1006,6 +1129,9 @@ func (s *Service) Open(ctx context.Context, tx pgx.Tx, pl Plan) (Session, []even
 	ses.ID = "trs_" + uuid.Must(uuid.NewV7()).String()
 	params := liveParams{Session: ses.ID, Input: ses.Input, Telephony: ses.Telephony, Pace: ses.Pace,
 		MaxFileSeconds: ses.Limits.MaxFileSeconds, MaxFileBytes: ses.Limits.MaxFileBytes, FrameMs: ses.Limits.FrameMs}
+	if pl.servedTarget != "" {
+		params.Mode, params.Target = ModeRelay, pl.servedTarget
+	}
 	records := make([]targetRecord, 0, len(ses.Targets))
 	for _, ln := range ses.Targets {
 		params.Targets = append(params.Targets, targetParam{Target: ln.Target, Model: ln.model, Profile: ln.Profile, Language: ln.Language, Boost: ln.boostKey})

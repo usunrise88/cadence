@@ -290,6 +290,13 @@ func (s *Service) PlanEvict(ctx context.Context, q storage.Querier, versionID st
 // PlanMaterialize plans datasets.materialize of one version: the shards missing from the cache and the mounts that
 // hold copies of them.
 func (s *Service) PlanMaterialize(ctx context.Context, q storage.Querier, versionID string) (Plan, error) {
+	return PlanMaterialize(ctx, q, s.CAS, versionID)
+}
+
+// PlanMaterialize is Service.PlanMaterialize against store: a pipeline's dry run tells what a training step's evicted
+// dataset version would copy back (needs-materialize) with the plan datasets.materialize would answer.
+func PlanMaterialize(ctx context.Context, q storage.Querier, store *cas.Store, versionID string) (Plan, error) {
+	s := &Service{CAS: store}
 	if s.CAS == nil {
 		return Plan{}, errors.New("cache: no content store")
 	}

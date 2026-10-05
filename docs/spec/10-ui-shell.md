@@ -91,7 +91,11 @@ budgets and decided against wavesurfer.js).
   (min/max peaks per channel, clipping marks), acoustic spectrogram, model input and emissions (from the transcribe
   step's `analysis` artifact), hypothesis words (one lane per target, confidence shading, S/D/I against the reference
   by glyph and colour), the streaming timeline (each word from first partial to final), boosted-term hits, and the
-  live energy meter; reference words and energy/VAD from steps arrive in phase 4 (the R51 table).
+  live energy meter; reference words and energy/VAD from steps arrive in phase 4 (the R51 table). As built (phase 4
+  tail, 2026-10-04): the reference track is drawn under the hypothesis lane from `words.get?goldenSet=` (the golden
+  set's newest `align_reference` alignment; `AudioView` prop `goldenSet`, selection items `&gs=ver_…`, passed by Eval
+  report and Diff rows), outlined so it never reads as a hypothesis, with an unaligned reference shown as text and
+  its reason, never at guessed times.
 - Spectrogram defaults live in `defaults.yaml` `views.audio` (R52): 25 ms Hann window, 10 ms hop, FFT 512, mel axis
   0–8 kHz (4 kHz with a Nyquist line for audio of 8 kHz origin), range 80 dB below the peak, gain 0, magma; presets
   "Praat broadband", "Narrowband", "Model frames" (the default). Model-input mode shows the checkpoint's own features
@@ -100,7 +104,10 @@ budgets and decided against wavesurfer.js).
   request; never jet or rainbow.
 - Computation: session audio and spans under 10 minutes in the browser (served 16 kHz PCM → FFT in a Web Worker,
   a JavaScript FFT (`fourier-transform`, MIT; no maintained WASM FFT exists) → uint8 dB into WebGL2 R8 textures with a 256×1 lookup texture, so gain, range and colormap are shader
-  parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store; the live
+  parameters; Canvas 2D fallback); long audio from a server tile pyramid cached in the content store (as built: built
+  once by the control-plane job `media.spectrogram` on the first view, which polls `spectrogram.get` while it answers
+  `202`; narrowband pyramids stop at 4 kHz; long audio's waveform reads a stored overview level plus 10 ms detail for
+  the window around the visible range, 06 "Media"); the live
   microphone as a waterfall from AudioWorklet frames, never an AnalyserNode. One WebGL2 renderer per window (Chrome's
   16-context limit); views survive context loss and hidden panels release their textures.
 - Playback goes through an HTMLMediaElement, with Media Source Extensions for signed segments (R25, 06 "Media").
@@ -233,7 +240,8 @@ One word per action, everywhere: in menus, the palette, API operation ids and MC
 | note, sync | Projects (learnings; template and skill sync) | Yes | None |
 | archive | Projects, sources, registry versions (`versions.archive`, phase 4: terminal for a version) | Yes | Inline confirm |
 | revoke | Credentials, tokens (R1) | No | Inline confirm |
-| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30); mounts: the health check a worker runs (`mounts.verify`, phase 4) | — | None |
+| verify | Agent credentials: a tiny real request through the agent, the result recorded (2026-09-30); mounts: the health check a worker runs (`mounts.verify`, phase 4); promotions: a person pastes the delivery script's receipt and Cadence checks it against the signed record (`promotions.verify`, phase 5) | — | None |
+| align | Golden sets: word timings of their reference texts, several sets in one pipeline run (`goldenSets.align`, phase 4 tail) | — | None (GPU spend follows the policy) |
 
 This table is the whole vocabulary: every MCP tool, API operation id and command id is <entity>.<verb> with a verb from it (the system tab lists the tools). Each verb has one Iconoir icon and one default key, defined once in the command registry; a panel that needs a new verb adds it here first.
 
@@ -310,6 +318,12 @@ Three state templates cover every kind: registry assets `draft → frozen → de
 | Auxiliary model | A registry model a step uses beside the trained one: a LID classifier, pseudo-label member or aligner; adopted with the admin's approval after a licence check (R26) | Base model (what is fine-tuned) |
 | Alignment | Word timings of a golden set's reference text against its audio, from a CTC aligner (`align_reference@1`); the reference track of the audio view and the basis of emission delay (R51, R54) | Diff alignment (reference vs hypothesis words) |
 | Emission delay | How long after a reference word ends (by the alignment) a streaming model first shows it in a partial that stays, PR50/PR90 in milliseconds (`latency_score@3`); `n/a` with a reason when the reference is unaligned (R54) | Latency to final (time to a final result) |
+| Deployment target | Where models are served: `staging` (the compose Triton Cadence reaches) or `delivery` (a production server only a person's delivery script reaches), with the families, formats and latency profiles it serves (R46, phase 5) | Compute (the host Cadence trains on) |
+| Export | A model version turned into a `deployable` for one latency profile, with its parity and benchmark reports (`models.export`, phase 5) | Dataset export (`datasets.export`) |
+| Parity | The check that an export decodes the same words as the model it came from: WER difference and identical token sequences on a fixed sample (R31) | Eval (a model against references) |
+| Promotion record | An append-only, hash-chained record signed with the instance's key: which model version's files went to which stage of a delivery target, approved by whom; confirmed by the receipt the delivery script prints (R33, phase 5) | Approval (the decision it names) |
+| Delivery script | The `deliver.sh` of a promotion's bundle, run by a person on the production host: it checks the signature and files, loads the model, runs a smoke check and prints the receipt | Pipeline |
+| Shadow | A deployment on the staging target that replays the night's calls beside the production model and records how far they diverge; no effect on calls | Replay (training samples from other locales); Canary |
 
 ## Window states
 
@@ -510,6 +524,8 @@ type Workspace = {
   when the serialized workspace differs from the stored one, and at once when the page is hidden or the workspace is
   switched. A layout save is a preference, not a domain command: its committed runs are not in the audit log.
 - Migrations: an integer `schemaVersion` and a chain of migration functions. The panel registry keeps an alias map for renamed panel ids.
+  As built: schema 2 adds Chat to the right column; schema 3 (phase 4 tail) removes an Audio panel from single-group
+  floating windows (default workspaces no longer open it; 11 "Default workspaces").
 - An unknown panel id restores as a placeholder panel ("Panel X no longer exists — remove"), never as a failed restore.
 - Default workspaces are built by code factories, not stored JSON, so "Reset to default" always matches the current registry.
 - Dockview upgrades run `fromJSON(toJSON())` round-trips over fixtures of every stored workspace in CI.

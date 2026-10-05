@@ -55,7 +55,8 @@ services:
       - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro
       - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports
     ports: ["127.0.0.1:${CADENCE_PORT:-8080}:8080"] # localhost only; TLS ends at the host's Caddy (R39)
-    networks: [default, agents]
+    # serving: the staging server's health check and the idle unload (internal/serving).
+    networks: [default, agents, serving]
     # A pipeline's dry run checks that a service an auxiliary model names answers (auxiliary/oasis on the host).
     extra_hosts: ["host.docker.internal:host-gateway"]
     depends_on:
@@ -135,6 +136,9 @@ services:
       - artifacts:/var/lib/cadence
       - ${CADENCE_CORPORA_DIR:-corpora}:/mnt/corpora:ro # mount corpora, read in place (unset: no host bind)
       - ${CADENCE_EXPORTS_DIR:-exports}:/mnt/exports # mount exports, the writable target of exports
+      # The staging server's model repository: serve steps install models here (CADENCE_SERVING_DIR in the image).
+      - serving:/var/lib/cadence/serving
+    networks: [default, serving] # serving: the staging server's stream protocol and model control
     ipc: host # NeMo's data loaders need more shared memory than the 64 MB default
     depends_on: [control-plane]
     # On SIGTERM a training step writes its training state and the lease is released as cancelled with it: at least
@@ -229,9 +233,46 @@ services:
               count: 1
               capabilities: [gpu]
 
+  # The staging server (phase 5, R30; docs/spec/06-platform.md "Staging serving"): Triton with explicit model control
+  # and an empty repository, the `serving` volume read-only. The GPU worker's serve steps install and load models
+  # (CADENCE_SERVING_DIR); the control plane checks its health and unloads idle ones. Internal network only, no host
+  # port. Cadence never starts it: `docker compose --profile serving up -d triton`. The CUDA pool holds every live
+  # stream's state (12.6 MB per stream at fp32, 80 ms): defaults.yaml deploy.triton_cuda_pool_mb (spike E1). Never
+  # enable use_growable_memory for implicit state (E1: it reserved 23 GB and refused every request).
+  triton:
+    image: ${CADENCE_TRITON_IMAGE:-nvcr.io/nvidia/tritonserver:26.08-py3@sha256:9185ba5b33d2c85c9204b208957b4bbfc6b2b89066efc9192e0f60c2ab58cec0}
+    profiles: [serving]
+    command:
+      - sh
+      - -c
+      - >-
+        exec tritonserver --model-repository=/models --model-control-mode=explicit --disable-auto-complete-config
+        --exit-on-error=false --http-port=8000 --grpc-port=8001 --metrics-port=8002
+        --pinned-memory-pool-byte-size=268435456
+        --cuda-memory-pool-byte-size=0:$$(( ${CADENCE_TRITON_CUDA_POOL_MB:-4096} * 1048576 ))
+    volumes:
+      - serving:/models:ro
+    networks: [serving]
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:8000/v2/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 networks:
   # No route out: the agent host reaches the control plane here and everything else through egress-proxy.
   agents:
+    internal: true
+  # No route out either: the staging server, the control plane (health, unload) and the GPU worker (serve steps).
+  serving:
     internal: true
 
 volumes:
@@ -246,3 +287,4 @@ volumes:
   artifacts: # the content store and the workers' scratch (one file system: hard links)
   corpora: # stands in for CADENCE_CORPORA_DIR when it is unset (empty: no corpora mounted)
   exports: # stands in for CADENCE_EXPORTS_DIR when it is unset
+  serving: # the staging server's model repository (serve steps write it, the server reads it)

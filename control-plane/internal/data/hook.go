@@ -24,7 +24,7 @@ import (
 // AudioFingerprint is the fingerprint kind every import writes: the audio's content hash.
 const AudioFingerprint = "audio-b3"
 
-// FileFingerprint is the fingerprint kind sdp_ingest@2 gives a segment: the content hash of the canonical WAV of the
+// FileFingerprint is the fingerprint kind sdp_ingest (since @2) gives a segment: the content hash of the canonical WAV of the
 // whole track it was cut from — what an import of that file as one utterance hashes. The leakage check matches it
 // against audio-b3 (and file-b3) of other utterances, so a golden set's file re-cut by VAD is still found.
 const FileFingerprint = "file-b3"
@@ -42,6 +42,10 @@ const batchSize = 500
 type Importer struct {
 	CAS *cas.Store
 	Now func() time.Time // time.Now when nil
+	// VersionOn, when set, is the date the registered version string carries, and Actor who registers: a project
+	// bundle's import (internal/bundles) keeps the version string the bundle's instance gave the same content.
+	VersionOn time.Time
+	Actor     *auth.Actor
 }
 
 // Register installs the importer as the output hook of the "dataset" artifact type.
@@ -83,7 +87,9 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 		now = im.Now().UTC()
 	}
 	actor := auth.Actor{Kind: auth.KindAutomation, ID: out.PipelineRunID, Name: "pipeline run " + out.PipelineRunID}
-	if out.PipelineRunID == "" {
+	if im.Actor != nil {
+		actor = *im.Actor
+	} else if out.PipelineRunID == "" {
 		actor = registry.Bundled()
 	}
 	format, err := artifactFormat(im.CAS, out.Artifact.Hash)
@@ -107,7 +113,7 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 		if err != nil {
 			return registry.Version{}, nil, err
 		}
-		return importNoise(ctx, tx, a, src, out, actor, now)
+		return importNoise(ctx, tx, a, src, out, actor, now, im.VersionOn)
 	}
 	src, _, drafts, err := Ensure(ctx, tx, SourceInput{Name: h.Source.Name, Licence: h.Source.Licence, Kind: h.Source.Kind,
 		Languages: languagesOf(a.Lines, h.Source.Languages), URL: h.Source.URL}, actor, now)
@@ -115,7 +121,7 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 		return registry.Version{}, nil, err
 	}
 	if h.Purpose == PurposeNoise {
-		v, more, err := importNoise(ctx, tx, a, src, out, actor, now)
+		v, more, err := importNoise(ctx, tx, a, src, out, actor, now, im.VersionOn)
 		return v, append(drafts, more...), err
 	}
 	uttIDs, err := upsertUtterances(ctx, tx, src.ID, a.Lines, now)
@@ -143,7 +149,7 @@ func (im *Importer) Import(ctx context.Context, tx pgx.Tx, out steps.Output) (re
 	}
 	v, created, regDrafts, err := registry.Register(ctx, tx, registry.RegisterInput{
 		Kind: registry.KindDataset, Name: "dataset/" + name, Description: desc, Tags: tags, Licence: src.Licence,
-		Payload: body, Actor: actor, Freeze: true, Fingerprint: ContentFingerprint(a.Lines),
+		Payload: body, Actor: actor, Freeze: true, Fingerprint: ContentFingerprint(a.Lines), On: im.VersionOn,
 	}, now)
 	if err != nil {
 		return registry.Version{}, nil, fmt.Errorf("register dataset version: %w", err)

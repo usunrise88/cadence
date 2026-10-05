@@ -173,8 +173,10 @@ func (s *Server) PipelinesRun(ctx context.Context, req api.PipelinesRunRequestOb
 	// The policy weighs GPU spending against the budget: plan once outside the command to learn the estimate. A
 	// broken pipeline is reported by the command itself (the same plan fails inside it), so it is not gated; a step
 	// that needs a card without an estimate makes the cost unknown, which the policy does not allow without a person.
+	// A plan that needs a dataset version materialized first is not weighed either: its dry run answers the warning,
+	// its real call the refusal (artifact-missing), never an approval to spend on a run that cannot start.
 	weighed := true
-	if _, plan, err := s.Pipelines.Prepare(ctx, s.Pool, in); err != nil {
+	if _, plan, err := s.Pipelines.Prepare(ctx, s.Pool, in); err != nil || len(plan.Materialize) > 0 {
 		ctx, weighed = commands.WithEstimate(ctx, policy.Estimate{}), false
 	} else {
 		ctx = commands.WithEstimate(ctx, policy.Estimate{GPUHours: deref(plan.Estimate.GPUHours), Unknown: plan.Estimate.UnknownGPU})
@@ -187,7 +189,12 @@ func (s *Server) PipelinesRun(ctx context.Context, req api.PipelinesRunRequestOb
 			if err != nil {
 				return commands.Result{}, nil, err
 			}
-			if !weighed {
+			if !cmd.DryRun {
+				if err := plan.MaterializeRefusal(ctx, tx); err != nil {
+					return commands.Result{}, nil, err
+				}
+			}
+			if !weighed && len(plan.Materialize) == 0 {
 				return commands.Result{}, nil, unweighed(cmd.Operation)
 			}
 			return commands.Result{Status: http.StatusOK, Body: planView(src, plan)}, nil, nil
@@ -266,6 +273,16 @@ func (s *Server) PipelineRunsGet(ctx context.Context, req api.PipelineRunsGetReq
 	body, err := convert[api.PipelineRun](r)
 	if err != nil {
 		return nil, err
+	}
+	// A run that is not done: the evicted dataset versions an unfinished training step would read (a retry fails it).
+	if nm, err := s.Pipelines.NeedsMaterialize(ctx, s.Pool, r); err != nil {
+		return nil, err
+	} else if len(nm) > 0 {
+		list, err := convert[[]api.NeedsMaterialize](nm)
+		if err != nil {
+			return nil, err
+		}
+		body.NeedsMaterialize = &list
 	}
 	etag := commands.ETag(r.Rev)
 	return api.PipelineRunsGet200JSONResponse{Body: body, Headers: api.PipelineRunsGet200ResponseHeaders{ETag: &etag}}, nil

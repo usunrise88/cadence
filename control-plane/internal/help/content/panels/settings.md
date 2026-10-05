@@ -1,6 +1,6 @@
 ---
 title: Settings
-summary: Instance-wide configuration for the admin — compute, the agents' model accounts, secrets, credentials, policies, notifications and the Telegram bot, backups, catalogues, security and the audit log.
+summary: Instance-wide configuration for the admin — compute, the agents' model accounts, secrets, credentials, policies, notifications and the Telegram bot, backups, the content store, deployment targets, catalogues, security and the audit log.
 contexts: [panel:settings]
 ---
 
@@ -18,6 +18,7 @@ A tool panel for the admin account only (it opens floating; View → Open Settin
 | Notifications | The routing table (per event class: in-app, Telegram, Telegram timing, silent), quiet hours, the digest time, and the Telegram bot: write-only token, allow-listed chats, chats that wrote to the bot, test message — see the [notifications guide](../guides/notifications.md) |
 | Backups | The schedule and retention, **Back up now**, the last restore test's report (row counts at backup vs restored, migration version, blobs re-hashed) and every set with its own **Restore test** — see the [backups guide](../guides/backups.md) |
 | Content store | How full the content store's disk is (red below `cache.store_low_free`, 15 %), the superseded training states an eviction would delete with their runs and sizes, and **Evict…**, which asks for an approval — see [freeing store space](../guides/freeing-store-space.md) |
+| Deployment targets | Where models are served: each staging target with its endpoint, server, what it serves, its server's health (`up`, `down`, `unknown`, since when, the error) and the models its serve steps loaded with their leases; each delivery target with what it serves, server, slots, repository path, concurrency, card class and the head of its signed promotion chain (records, pending); the instance's public signing key with **Copy public key** (install it once on each production host as `/etc/cadence/instance.pub`). Creating or changing a target is an approval the admin decides — see [deployment targets](deployment-targets.md) |
 | Catalogues | Read-only: base models, instruction templates and permission presets in the registry |
 | Security | Two-factor sign-in (TOTP) for the admin account: **Set up** shows a QR code to scan with an authenticator app from the screen (drawn in the browser; the key never leaves the page), or the key in groups of four to type; confirm with the app's current code |
 | Audit log | Every command, denial and failed attempt with actor, outcome, rule and cause; filter by actor, operation and project. Workspace layout saves are preferences, not commands: they are not listed (a refused save still is) |
@@ -85,6 +86,7 @@ key's token appears once, right after creation, with a Copy button — Cadence k
 | Back up now | `backups.new` | Answers the job; one set at a time |
 | Restore test | `backups.verify` | Restores the set into a scratch database and checks it; answers the job |
 | (the Content store list) | `artifacts.evict?dryRun=true` | Read when the section opens and on Refresh, with the store's disk |
+| (the Deployment targets section) | `deploymentTargets.list` | Read when the section opens, on Refresh and on a target's events |
 | Evict… | `artifacts.evict` | Always answers an approval, for people too; decide it in Approvals or from Telegram |
 | Two-factor authentication… | `totp.enroll`, `totp.confirm`, `totp.disable` | The same dialog as the user menu |
 

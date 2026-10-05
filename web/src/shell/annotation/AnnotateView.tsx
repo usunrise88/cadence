@@ -9,7 +9,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { AudioView, type AnalysisData, type AudioEngine } from "@/shell/audio";
 import { errorMessage, runCommand } from "@/shell/panel/commands";
-import { channelCycle, channelLabel, ENTITY_CLASSES, formOf, KEYS, keepSpans, seconds, segmentSpan, spanOf, TAGS, toggleTag, type AnnotationForm } from "./model";
+import { GuidelinesPane } from "./Guidelines";
+import { channelCycle, channelLabel, ENTITY_CLASSES, formOf, KEYS, keepSpans, seconds, segmentSpan, shownItem, spanOf, TAGS, toggleTag, type AnnotationForm } from "./model";
 
 // The Annotate mode (docs/spec/04-blocks.md "Annotation workflow" step 3; docs/spec/11-ui-panels.md Triage queue): one
 // batch item at a time — its window of the call with a channel switch (the target first, then the other party, then
@@ -31,9 +32,8 @@ export function AnnotateView({ batchId, compact }: AnnotateViewProps) {
   const list = useQuery({ ...listOpts, refetchOnWindowFocus: false });
   const [current, setCurrent] = useState<string | undefined>();
   const items = useMemo(() => list.data?.items ?? [], [list.data]);
-  const next = list.data?.next;
-  const itemId = current ?? next ?? items[0]?.id;
-  const item = items.find((i) => i.id === itemId);
+  const item = shownItem(items, list.data?.next, current);
+  const itemId = item?.id;
   const mine = items.filter((i) => i.annotations.some((a) => a.annotator.id === userId));
   const open = items.length - mine.length;
 
@@ -75,6 +75,7 @@ export function AnnotateView({ batchId, compact }: AnnotateViewProps) {
         </nav>
       ) : null}
       <div className="min-w-0 flex-1 overflow-auto">
+        <GuidelinesPane batchId={batchId} />
         {item ? (
           <ItemForm key={item.id} batchId={batchId} item={item} userId={userId} onDone={advance} />
         ) : (

@@ -219,6 +219,12 @@ func (l *Leases) run(spec steps.Spec) (steps.Outcome, error) {
 	if o, ok, err := l.runAlignment(spec); ok {
 		return o, err
 	}
+	if o, ok, err := l.runDeploy(spec); ok {
+		return o, err
+	}
+	if o, ok, err := l.runShadow(spec); ok {
+		return o, err
+	}
 	if spec.Kind == KindRelay {
 		return steps.Outcome{State: steps.StateDone, Outputs: map[string]steps.ArtifactRef{"data": spec.Inputs["data"]}}, nil
 	}

@@ -45,6 +45,7 @@ tags:
   - { name: media, description: "Audio for people: an utterance's audio, peaks, spectrogram tiles and words, live transcription (R25, R47); exempt from the vocabulary and never MCP tools; agents are refused" }
   - { name: storage, description: "Mounts (local, NFS/SMB, S3-compatible, Hub), the local cache with pinning, eviction and quotas, dataset materialisation" }
   - { name: annotation, description: "Annotation batches (sampling, double annotation, adjudication, freeze), reviewer invitations and the triage queue's resolutions" }
+  - { name: deployments, description: "Deployment targets, deployments, signed promotion records and delivery bundles (phase 5, R30–R33, R46)" }
   - { name: planned, description: Named now, implemented in a later phase (501 until then) }
 
 paths:
@@ -73,7 +74,14 @@ paths:
           instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard).
           The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow
           job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200
-          with the project that would be created and queues nothing.
+          with the project that would be created and queues nothing. With bundle (mount://<mount>/<dir>, a project
+          bundle from projects.export) the project is made from the bundle: description, locales, domain and base model
+          default to the bundle's, the internal repository is the bundle's history (main at the bundled commit),
+          and the bootstrap job imports and adopts the bundle's registry versions as bundles.adopt does (the base model
+          becomes the bundle's when it is one of them), then commits project.yaml, AGENTS.md and data.lock for this
+          instance. Registering versions is a registry change, so a call with bundle is an approval the admin decides,
+          for people too (202 with an approvalId instead of a jobId; the approved call answers 202 with the job).
+        gatedWhen: { param: from, values: [bundle] }
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
         - $ref: "#/components/parameters/DryRun"
@@ -3767,9 +3775,12 @@ paths:
       summary: Min/max peaks per channel of an utterance (or a span) at a resolution, for the waveform track
       tags: [media]
       description: >
-        int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. The 10 ms
-        peaks are computed from the audio on first use and cached in the content store as a peaks artifact (a stored
-        peaks artifact of the audio is used when present); coarser hops are max-pooled from them.
+        int8 min/max pairs (value / 127 = sample) per hop and channel, frames × channels × [min, max], base64. Peaks are
+        stored once per audio as a peaks artifact (cadence.peaks/2): the 10 ms base level and, for long audio, coarser
+        levels (×16 each), computed when a dataset version is registered (a frozen version's members, and a draft's
+        segments whose files the control plane reads without a decoder) by the media.peaks job. A request reads only
+        the span it asks for from the coarsest stored level that divides hopMs and pools it; audio with no stored peaks
+        is computed on this request and stored (computed: true).
       parameters:
         - { name: hopMs, in: query, description: "Resolution: milliseconds per min/max pair, a multiple of 10", schema: { type: integer, minimum: 10, maximum: 60000, default: 10 } }
         - { name: start, in: query, description: "Span start in seconds (default 0)", schema: { type: number, format: double, minimum: 0 } }
@@ -3785,13 +3796,19 @@ paths:
     parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
     get:
       operationId: spectrogram.get
-      summary: The spectrogram tile pyramid of an utterance's audio (spectrogram_tiles@1) — its manifest, or one tile
+      summary: The spectrogram tile pyramid of an utterance's audio — its manifest, or one tile; the first request builds it
       tags: [media]
       description: >
         For audio longer than views.audio.browser_stft_max_s the audio view reads a server tile pyramid: the newest
-        spectrogram_tiles artifact computed for the utterance's audio. Without tile: the manifest (JSON). With
-        tile=c<ch>/l<level>/<index>: that tile's bytes (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). 404 when
-        no pyramid was computed for this audio.
+        spectrogram_tiles artifact of the utterance's audio at the views.audio settings (or one spectrogram_tiles@1
+        wrote in a pipeline). Without tile: the manifest (JSON). With tile=c<ch>/l<level>/<index>: that tile's bytes
+        (uint8 dB, bins × 512 frames, dB = -120 + 0.5 × value). When no pyramid exists, a manifest request starts the
+        media.spectrogram job that builds it once in the control plane (any audio the view plays: a stored utterance,
+        a segment or window of a file on a mount) and answers 202 with the job (Retry-After 2); requests while it runs
+        answer the same job, so each audio is built once. A failed build answers media-tiles-failed until
+        media.tiles_retry_s has passed, then builds again; audio longer than media.tiles_max_s is refused. Narrowband
+        audio (8 kHz origin by its estimated bandwidth) keeps bins up to 4 kHz (manifest narrowband, bandwidthHz). A
+        tile request with no pyramid answers 404.
       parameters:
         - { name: tile, in: query, description: "A tile: c<channel>/l<level>/<index>", schema: { type: string, pattern: "^c[0-9]{1,2}/l[0-9]{1,2}/[0-9]{1,7}$" } }
       responses:
@@ -3800,6 +3817,7 @@ paths:
           content:
             application/json: { schema: { $ref: "#/components/schemas/SpectrogramManifest" } }
             application/octet-stream: { schema: { type: string, format: binary } }
+        "202": { $ref: "#/components/responses/JobAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   /registry/utterances/{id}/words:
@@ -3807,16 +3825,21 @@ paths:
     parameters: [{ $ref: "#/components/parameters/UtteranceRef" }]
     get:
       operationId: words.get
-      summary: An utterance's hypothesis words with times from a hypotheses artifact, marked S/D/I against the reference by a scores artifact
+      summary: An utterance's hypothesis words with times (marked S/D/I against the reference by a scores artifact) and its reference words at aligned times
       tags: [media]
       description: >
-        The audio view's word track for one utterance: its row of a hypotheses artifact (words with start, end and
+        The audio view's word tracks for one utterance: its row of a hypotheses artifact (words with start, end and
         confidence; partial events of a streaming decode), and, with scores, the alignment of that utterance's row in
         the scores artifact — each hypothesis word marked =, S or I (with the reference word for S), and the reference
-        words the hypothesis deleted placed between hypothesis words.
+        words the hypothesis deleted placed between hypothesis words. With goldenSet (or alignment), the reference
+        track: the utterance's row of the golden set's newest reference alignment (align_reference) — its words at
+        their aligned times, or the text and the reason when it stayed unaligned. At least one of hypotheses,
+        goldenSet and alignment is required.
       parameters:
-        - { name: hypotheses, in: query, required: true, description: "The hypotheses artifact (b3:…), e.g. an eval cell's", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+        - { name: hypotheses, in: query, description: "The hypotheses artifact (b3:…), e.g. an eval cell's", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
         - { name: scores, in: query, description: "The scores artifact (b3:…) of the same cell", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
+        - { name: goldenSet, in: query, description: "A golden set version (ver_…): its newest reference alignment gives the reference track", schema: { type: string, maxLength: 100 } }
+        - { name: alignment, in: query, description: "An alignment artifact (b3:…, cadence.alignment/1) to read the reference track from", schema: { type: string, pattern: "^b3:[0-9a-f]{64}$" } }
       responses:
         "200":
           description: The words
@@ -4162,6 +4185,128 @@ paths:
           description: The export
           headers: { ETag: { $ref: "#/components/headers/ETag" } }
           content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- guidelines text, registry texts (phase 4 tail · stream U) — add paths below this line
+
+  /batches/{id}/guidelines:
+    x-cadence: { entity: guidelines, kind: annotation_guidelines, singleton: true }
+    parameters: [{ $ref: "#/components/parameters/BatchId" }]
+    get:
+      operationId: guidelines.get
+      summary: The annotation guidelines a batch pinned — the Markdown file at the batch's commit of the project repository
+      tags: [annotation]
+      x-cadence:
+        toolDescription: >
+          Read the annotation guidelines of an annotation batch as its annotators see them: the file
+          annotation/guidelines/<name>.md at the commit the batch pinned when it was created (R27), not the file on main
+          today. The text is Markdown, at most 256 KiB (truncated says when it was cut). A reviewer invited to the batch
+          reads it; nothing else of the repository is served this way (recipes.get reads the project's files).
+      responses:
+        "200":
+          description: The guidelines at the pinned commit
+          content: { application/json: { schema: { $ref: "#/components/schemas/GuidelinesText" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /registry/texts/{hash}:
+    x-cadence: { entity: texts, kind: registry_text }
+    parameters: [{ $ref: "#/components/parameters/ArtifactHash" }]
+    get:
+      operationId: texts.get
+      summary: Read a text of the content store the registry names to be read — a dataset version's card (Markdown)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Read a text file of the content store that a registry version names as text meant to be read: today the
+          dataset card (Markdown) of a dataset version, by the hash datasets.get gives as dataset.card.hash. Any other
+          hash answers not-found, whatever the blob holds — audio, manifests and shards are read by steps, not
+          served as text. Registry read; at most 256 KiB (truncated says when it was cut).
+      responses:
+        "200":
+          description: The text
+          content: { application/json: { schema: { $ref: "#/components/schemas/RegistryText" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # project bundles (phase 4 · tail · stream infra): projects.export writes one, bundles.adopt and projects.new read one
+
+  /projects/{p}:export:
+    x-cadence: { entity: projects }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: projects.export
+      summary: Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Write a self-contained Cadence project bundle to a directory on a writable path mount, for another Cadence
+          instance (bundles.adopt, or projects.new with bundle) or for safekeeping: repository.bundle (a git bundle of
+          the repository at ref, default main), data.lock at that commit, bundle.json (the project's facts, its
+          aliases and the registry record of every version it adopted or that an adopted version names — dataset
+          versions, golden sets, normalizers, noise banks, auxiliary models' payloads, models, base models,
+          templates — with their sources and licences), one dataset bundle per dataset version and noise bank under
+          datasets/<name>/<version>/ (the layout datasets.export cadence-bundle writes) and every other blob a payload
+          names under cas/. Versions published by workers (runtimes, step kinds, model families) travel as references
+          only. Every dataset version must be in the cache (datasets.materialize an evicted one first). target
+          defaults to mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>; a directory that already holds
+          a bundle is refused. dryRun=true answers the plan (commit, target, versions, blobs, bytes). The real call
+          answers 201 with the export (exports.get; format cadence-project-bundle, follow job.{jobId}); the audio it
+          writes is recorded as mount copies of its content-store blobs. Needs If-Match with the project's revision
+          (projects.get): the bundle carries the adoptions and aliases of that revision.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectExportRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the bundle as it would be written; nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/ProjectExportPlan" } } }
+        "201":
+          description: "The export, queued: follow entity.export.{id} or job.{jobId}"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DatasetExport" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/bundles:adopt:
+    x-cadence: { entity: bundles }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: bundles.adopt
+      summary: Import a Cadence project bundle's registry versions this instance lacks and adopt every version the bundle's project adopted into this project (approval for everyone); 201 with the import job
+      tags: [projects]
+      x-cadence:
+        toolDescription: >
+          Read a Cadence project bundle (projects.export on this or another instance) from a directory on a mount
+          (bundle: mount://<mount>/<dir>, the directory holding bundle.json) and adopt the versions its project adopted
+          into this project. Versions this instance already holds (same collection and content) are reused; the rest
+          are registered under their original version strings — their blobs copied into the content store and checked
+          against their hashes, dataset versions and noise banks re-imported from their dataset bundles with their
+          sources and licences (a source cleared for training there is cleared here), golden sets re-frozen through
+          this instance's leakage checks. Adoption runs the licence checks (and the golden-set leakage check against
+          what this project trained on); aliases the bundle sets are set where this project has no alias of that name
+          (production never). The repository is not changed (projects.new with bundle makes a new project from it).
+          Registering versions is a registry change for every project, so the call is an approval the admin decides,
+          for people too (202 with an approvalId); the approved call answers 201 with the import job (follow
+          job.{jobId}; its result lists what was registered, reused and adopted). dryRun=true answers the plan
+          without asking. Needs If-Match with the project's revision.
+        gatedWhen: { param: from, values: [bundle] }
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BundleAdopt" } } }
+      responses:
+        "200":
+          description: Dry run — what the import would register, reuse and adopt; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/BundlePlan" } } }
+        "201":
+          description: The import, queued
+          content: { application/json: { schema: { $ref: "#/components/schemas/BundleImport" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
   # ---------------------------------------------------------------- ingest, draft datasets, freeze, sources, utterance search (phase 4 · stream D) — add paths below this line
@@ -4655,6 +4800,574 @@ paths:
           description: The tracks
           content: { application/json: { schema: { $ref: "#/components/schemas/AudioTracks" } } }
         default: { $ref: "#/components/responses/Problem" }
+  # ---------------------------------------------------------------- golden-set alignment in one run (phase 4 tail · stream measure) — add paths below this line
+  /projects/{p}/golden-sets:align:
+    x-cadence: { entity: goldenSets, kind: golden_set }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: goldenSets.align
+      summary: Align the reference texts of several golden sets in one pipeline run (word timings for emission delay)
+      tags: [registry]
+      x-cadence:
+        toolDescription: >
+          Give golden sets word timings for their reference texts (emission delay in evals needs them) in one pipeline
+          run: one aligning step per golden set (its dataset artifact), so the whole batch is one GPU-spend decision.
+          goldenSets lists ver_… ids or collection names (golden-set/<name>, * patterns), default every golden set the
+          project adopted. Sets are skipped, with the reason, when already aligned (goldenSets.get → alignment), when
+          an aligning step on their dataset has not finished, or when the aligner the project adopted (role align)
+          does not cover their language. Call it with dryRun=true first: it answers the sets, the skips and the
+          estimate (golden-set audio hours × defaults.yaml eval.align_seconds_per_audio_hour), starting nothing. The
+          real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), the plan without one
+          when nothing is left to align, or 202 with an approvalId when the GPU spend needs a person. A step that
+          fails leaves its set unaligned and the others go on.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetAlign" } } }
+      responses:
+        "200":
+          description: Dry run — the sets to align, the skips and the estimate; or a real call with nothing left to align
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetAlignPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run (one aligning step per dataset artifact)
+          content: { application/json: { schema: { $ref: "#/components/schemas/GoldenSetAlignPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- model exports, parity, benchmarks (phase 5 · stream D1) — add paths below this line
+  # A model version never changes: what these add attaches to it (model_exports, read through models.get exports[]).
+  # Each runs a pipeline generated per request in the family's runtime (03 "Export, parity and benchmark"): the
+  # family's export, parity-reference and serve roles, then the neutral parity_score@1 / benchmark_score@1.
+  /projects/{p}/models:export:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.export
+      summary: Export a model version for serving, one deployable per latency profile (GPU spend)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Turn a registered model version (ver_…, @alias or model/<name>) into deployables the staging server and
+          production can load: one per latency profile (default deploy.export_profiles, the primary profile), in the
+          family's export format (default the family's first). Each runs the family's export step (for Nemotron: the
+          fp32 ONNX step graph, a TensorRT engine built on the card, the Triton model directory and the smoke client).
+          A profile already exported (or exporting) is answered as it is and not run again. Call it with dryRun=true
+          first: it answers the profiles, the step and the estimate, starting nothing. The real call answers the plan
+          with pipelineRun (plr_…; follow it with pipelineRuns.wait), or 202 with an approvalId when the GPU spend
+          needs a person. Then models.parity and models.benchmark; models.get shows exports[].
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelExportRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the profiles to export and the estimate; or a real call with nothing left to export
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelExportPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run (one export step per profile)
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelExportPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/models:parity:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.parity
+      summary: Check that an export decodes like the model it came from, through the staging server (R31; GPU spend)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Decode the fixed parity sample (the first deploy.parity_sample_utterances utterances by audio hash of a golden
+          set; default the project's first target golden set) twice: with the family's reference decoder at the eval's
+          batch, and through the staging server with the exported engine. parity_score@1 then compares them: passed
+          when |WER difference| ≤ deploy.parity_max_wer_delta (0.1 points), identical token sequences ≥
+          deploy.parity_min_identical_share and word disagreement ≤ deploy.parity_max_disagreement. The export must be
+          exported (export-missing otherwise; models.export first). dryRun=true answers the sample, the steps and the
+          estimate. The real call answers the plan with pipelineRun, or 202 with an approvalId. The verdict lands on
+          the export (models.get exports[].parity) and is what a canary promotion requires.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelParityRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the sample, the steps and the estimate
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelParityPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelParityPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/models:benchmark:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.benchmark
+      summary: Stream audio through the staging server at real-time pace at each concurrency level and judge the latency budget (R31)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Measure an export on the staging server: the parity sample's audio streams at real-time pace at each level of
+          streams (default deploy.benchmark_streams, plus the target's concurrency), deploy.benchmark_seconds_per_level
+          each; benchmark_score@1 reports p50/p95/p99 latency per chunk from audio availability, time to final, RTF,
+          and the most streams within the budget (streams per card). The verdict is taken at target's concurrency
+          (a delivery target dtg_… or name; default deploy.target_concurrency): passed when p95 chunk latency ≤
+          deploy.latency_budget_over_chunk_ms, inconclusive when processes outside Cadence used the card during that
+          level. Every level takes its card alone (job kind benchmark: the card drains for up to
+          deploy.benchmark_drain_max_minutes first; training is never preempted). The export must be exported
+          (export-missing). dryRun=true answers the levels and the estimate; the real call answers the plan with
+          pipelineRun, or 202 with an approvalId. The report lands on models.get exports[].benchmarks.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmarkRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the levels, the steps and the estimate
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmarkPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmarkPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- deployment targets, promotion records, delivery (phase 5 · stream D3) — add paths below this line
+  # Deployment targets are instance-wide (registry scope, R46): creating or changing one is an approval the admin
+  # decides, for people too (preset rule deployment-targets). Promotion records are append-only and hash-chained per
+  # delivery target, signed with the instance's Ed25519 key (R33, 02 "Promotion records"). promotions.verify is for
+  # people only (rule delivery-is-for-people): the receipt comes from a production host no agent reaches.
+  /deployment-targets:
+    x-cadence: { entity: deploymentTargets }
+    get:
+      operationId: deploymentTargets.list
+      summary: Deployment targets (staging and delivery) with what they serve, their chain head and the instance signing key
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          List where models are served. kind staging is the server Cadence reaches (shadow, parity, benchmark run
+          through it); kind delivery is a production server only a person's delivery script reaches (it has no
+          endpoint). Each target lists what it serves (model family, deployable formats, latency profiles: the first
+          is the primary one), its server kind and version, the slots (model names the production pipeline calls),
+          its concurrency and card class, and for a delivery target the head of its promotion record chain. The
+          answer also carries the instance's public signing keys (the current one and retired ones).
+      parameters:
+        - { name: state, in: query, description: "active (default) or all (archived targets too)", schema: { type: string, enum: [active, all], default: active } }
+      responses:
+        "200":
+          description: Targets by name, and the signing keys
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTargetList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: deploymentTargets.new
+      summary: Ask for a new deployment target (registry approval for everyone, the admin decides)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Ask for a new deployment target. A target names production, so the real call always answers 202 with an
+          approvalId, for people too; the admin decides it, and the approved request creates the target. A delivery
+          target gets the first record of its promotion chain (genesis, signed with the instance key); it never has
+          an endpoint and needs repositoryPath and at least one slot. A staging target needs an endpoint. dryRun=true
+          validates and answers the target as it would be created.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTargetNew" } } }
+      responses:
+        "200":
+          description: Dry run — the target as it would be created; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTarget" } } }
+        "201":
+          description: The created target (the approved request)
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTarget" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployment-targets/{id}:
+    x-cadence: { entity: deploymentTargets }
+    parameters:
+      - { name: id, in: path, required: true, description: "Target id (dtg_…) or name", schema: { type: string } }
+    get:
+      operationId: deploymentTargets.get
+      summary: Get a deployment target with what it serves and its chain head
+      tags: [deployments]
+      responses:
+        "200":
+          description: The target
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTarget" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    patch:
+      operationId: deploymentTargets.edit
+      summary: Change a deployment target (registry approval for everyone; a delivery target's chain gets a target-changed record)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Ask to change a deployment target: what it serves, its server, endpoint (staging), repositoryPath and slots
+          (delivery), concurrency, card class, boost limits or description. Its name and kind never change. The real
+          call answers 202 with an approvalId, for people too; the approved change bumps the revision and, on a
+          delivery target, appends a signed target-changed record naming the new configuration. Send If-Match.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTargetEdit" } } }
+      responses:
+        "200":
+          description: The changed target (the approved request), or for a dry run what it would become
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTarget" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployment-targets/{id}:archive:
+    x-cadence: { entity: deploymentTargets }
+    parameters:
+      - { name: id, in: path, required: true, description: "Target id (dtg_…) or name", schema: { type: string } }
+    post:
+      operationId: deploymentTargets.archive
+      summary: Archive a deployment target (soft, the admin's); it takes no new deployments or promotions, its chain stays
+      tags: [deployments]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: The archived target
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentTarget" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployment-targets/{id}/promotions:
+    x-cadence: { entity: promotions }
+    parameters:
+      - { name: id, in: path, required: true, description: "Delivery target id (dtg_…) or name", schema: { type: string } }
+    get:
+      operationId: promotions.list
+      summary: A delivery target's promotion record chain, oldest first, every record re-verified on read
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          The target's promotion records, oldest first: genesis, promotions, rollbacks, confirmations, withdrawals,
+          target changes and key rotations. Each record is JSON in canonical form (RFC 8785) whose SHA-256 is its
+          hash, signed with the instance's Ed25519 key and chained by prevHash. Every record is verified again on
+          read (verified, with the reasons when not), and intact says whether the whole chain holds. Filter by
+          project (slug or id) and slot; a filtered answer still verifies the whole chain.
+      parameters:
+        - { name: project, in: query, description: "Only records of this project (slug or prj_…)", schema: { type: string, maxLength: 100 } }
+        - { name: slot, in: query, description: "Only records of this slot", schema: { type: string, maxLength: 100 } }
+      responses:
+        "200":
+          description: The chain
+          content: { application/json: { schema: { $ref: "#/components/schemas/PromotionChain" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /promotions/{id}:
+    x-cadence: { entity: promotions }
+    parameters:
+      - { name: id, in: path, required: true, description: "Promotion record id (prm_…)", schema: { type: string } }
+    get:
+      operationId: promotions.get
+      summary: A promotion record with its signature, key, state, delivery script and (for people) a signed bundle link
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          One promotion record: its canonical body, hash, signature and key id, whether it verifies, its state (a
+          promotion or rollback is pending until a person confirms its receipt, then confirmed, or withdrawn after
+          deploy.delivery_pending_days), and its delivery bundle (state, content-store hash, the text of deliver.sh,
+          the smoke check's size). People also get a short-lived signed link that downloads the bundle; agents
+          never do — delivery is for people.
+      responses:
+        "200":
+          description: The record
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PromotionRecord" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /promotions/{id}:verify:
+    x-cadence: { entity: promotions }
+    parameters:
+      - { name: id, in: path, required: true, description: "Promotion record id (prm_…) of a promotion or rollback", schema: { type: string } }
+    post:
+      operationId: promotions.verify
+      summary: Confirm a delivery with the receipt line deliver.sh printed (people only); appends a signed confirmation record
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          People only (rule delivery-is-for-people): an agent never confirms a delivery. The person who ran the
+          bundle's deliver.sh on the production host pastes the line it printed, CADENCE-RECEIPT 1 <recordHash>
+          <servedSha256> <ok>/<total> <host> <UTC time>. Cadence accepts it when the record is the slot's pending one,
+          the record hash matches, the served files hash to the record's manifestSha256 and the smoke check passed;
+          it then appends a signed confirmation record naming the person and moves the deployment to its stage.
+          Anything else answers promotion-receipt-mismatch and changes nothing. Send If-Match with the record's ETag.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PromotionVerify" } } }
+      responses:
+        "200":
+          description: Confirmed (or, for a dry run, the checks passed) — the record with its confirmation
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/PromotionRecord" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /promotions/{id}/delivery:
+    x-cadence: { entity: delivery, kind: delivery_bundle, singleton: true }
+    parameters:
+      - { name: id, in: path, required: true, description: "Promotion record id (prm_…)", schema: { type: string } }
+    get:
+      operationId: delivery.get
+      summary: Download a promotion's delivery bundle as a gzipped tar (people only; a signed link needs no session)
+      tags: [media]
+      description: >
+        The delivery bundle (cadence.delivery/1) of a promotion record as a .tar.gz: deliver.sh, record.json,
+        record.sig, instance.pub, the model directory, decoding configuration and the smoke set, under one directory
+        named after the record. A request signed by promotions.get (exp, viewer, sig) needs no session and is
+        attributed to its viewer. Every download is written to the audit log. Agents and API keys are refused.
+      parameters:
+        - { name: exp, in: query, description: "Signed link: expiry (Unix seconds)", schema: { type: integer, format: int64 } }
+        - { name: viewer, in: query, description: "Signed link: the user it was minted for", schema: { type: string, maxLength: 100 } }
+        - { name: sig, in: query, description: "Signed link: the signature over record, viewer and expiry", schema: { type: string, maxLength: 100 } }
+      responses:
+        "200":
+          description: The bundle
+          content: { application/gzip: { schema: { type: string, format: binary } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  # ---------------------------------------------------------------- deployments, shadow replay (phase 5 · stream D4) — add paths below this line
+  # A deployment is project work (dep_…): a model version's export on the staging target as a shadow, then promoted
+  # to a delivery target's slot as canary and production (02 "Deployment entities"). Promotions and rollbacks pass the
+  # checks first (each refusal a 422 with its help page), then an approval for everyone (rule deployments), then a
+  # signed promotion record and its delivery bundle in the approving transaction; promotions.verify confirms the stage.
+  # Shadow deployments replay the night's calls from their replay mount at deploy.shadow_replay_at (shadowReplays).
+  /projects/{p}/deployments:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    get:
+      operationId: deployments.list
+      summary: The project's deployments, newest first, with stage, shadow progress and pending promotions
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          List the project's deployments (dep_…), newest first: the model version and export they serve, where (the
+          staging target for a shadow, a delivery target's slot for canary and production), the stage (shadow, canary,
+          production, retired) and state (active, pending-delivery while a promotion waits for its receipt,
+          rolled-back, retired), the shadow progress (hours replayed against deploy.shadow_min_hours, nights,
+          divergence from the comparison model with its interval) and the stage history with its promotion records.
+          Filter by model version (ver_…, @alias or model/<name>), stage or state=all (retired and rolled back too).
+      parameters:
+        - { name: version, in: query, description: "Only deployments of this model version (ver_…, @alias or model/<name>)", schema: { type: string, maxLength: 200 } }
+        - { name: stage, in: query, description: Only deployments at this stage, schema: { $ref: "#/components/schemas/DeploymentStage" } }
+        - { name: state, in: query, description: "live (default: active and pending-delivery) or all", schema: { type: string, enum: [live, all], default: live } }
+      responses:
+        "200":
+          description: Deployments, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: deployments.new
+      summary: Deploy a model version's export as a shadow on the staging target, replayed nightly from a calls mount
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Create a shadow deployment: the model version's export (version ver_…, @alias or model/<name>; profile
+          default the primary profile; format default the family's first) on the staging target, with no effect on
+          calls. It needs an exported export the staging target serves (export-missing, target-does-not-serve) and a
+          staging server that is up (serving-unavailable). replay names the calls it replays every night at
+          deploy.shadow_replay_at: a mount, a path under it and the registered source the recordings belong to (no
+          licence, no ingest), optionally their language and channel roles. Each night the newest calls not yet
+          replayed, up to deploy.shadow_replay_max_hours, are decoded by this model and by the comparison model
+          (against; default the project's production deployment's model, else @baseline) through the staging server,
+          and shadow_score@1 records their divergence; a canary needs deploy.shadow_min_hours of replayed calls.
+          Allowed for agents. dryRun=true validates and answers the deployment as it would be created.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentNew" } } }
+      responses:
+        "200":
+          description: Dry run — the deployment as it would be created; nothing changed
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deployment" } } }
+        "201":
+          description: The shadow deployment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deployment" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: deployments.get
+      summary: A deployment with its shadow progress, stage history and pending promotion
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          One deployment: what it serves, where, its stage and state, the shadow progress (hours, calls, nights,
+          divergence with its interval, the comparison model, the last replay), the pending promotion when one waits
+          for its receipt, and the stage history (created, promotion, rollback, confirmation, withdrawal) with the
+          promotion record of each step. shadowReplays.list has the nights.
+      responses:
+        "200":
+          description: The deployment
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/Deployment" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}:promote:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    post:
+      operationId: deployments.promote
+      summary: Promote a deployment to canary or production on a delivery target's slot (checks, then an approval, then a signed record and its bundle)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Ask to promote a deployment. canary: from shadow to a delivery target's slot (target dtg_… or name, slot)
+          at trafficShare (default deploy.canary_share); it needs the target to serve the family, format and profile
+          and to run the engine's server version and card class (target-does-not-serve), the export's parity passed
+          (parity-failed), a benchmark of the export passed at the target's concurrency (benchmark-missing,
+          latency-budget-exceeded), the shadow at deploy.shadow_min_hours (shadow-volume-short) and no other canary or
+          pending promotion on the slot (conflict). production: the same model version must be the slot's confirmed
+          canary (canary-required). Promoting to the stage the deployment already holds with a new decoding (boost
+          lists) is a config-only promotion: no new model, the bundle ships the decoding configuration. The checks run
+          first; dryRun=true answers every check without asking anyone. The real call always answers 202 with an
+          approvalId, for people too (rule deployments): a person decides it in the confirm modal. The approval appends
+          a signed promotion record and builds its delivery bundle; the deployment waits in pending-delivery until a
+          person runs deliver.sh on the production host and pastes its receipt (promotions.verify).
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentPromote" } } }
+      responses:
+        "200":
+          description: "Dry run — every check with its verdict and what the record would say; or the approved request: the deployment, pending delivery, with its record"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentPromotion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}:rollback:
+    x-cadence: { entity: deployments, kind: deployment }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    post:
+      operationId: deployments.rollback
+      summary: Roll a canary or production deployment back to the slot's earlier production version (approval, signed record, small script)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Ask to roll a canary or production deployment back: its slot returns to the confirmed earlier production
+          version, which stayed loaded on the production host (rollback-unavailable when the slot has none). Same path
+          as a promotion: dryRun=true answers the check and the version restored; the real call answers 202 with an
+          approvalId, for people too; the approval appends a signed rollback record and builds a small delivery
+          script that routes the slot back; promotions.verify confirms it.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentRollback" } } }
+      responses:
+        "200":
+          description: "Dry run — the check and the version restored; or the approved request: the deployment, pending delivery, with its record"
+          headers: { ETag: { $ref: "#/components/headers/ETag" } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/DeploymentPromotion" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /deployments/{id}/shadow-replays:
+    x-cadence: { entity: shadowReplays, kind: shadow_replay }
+    parameters:
+      - { name: id, in: path, required: true, description: "Deployment id (dep_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: shadowReplays.list
+      summary: A shadow deployment's nightly replays, newest first, with the divergence of each night
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          The nights a shadow deployment replayed (srp_…), newest first: state (running, done, failed, skipped with
+          the reason), calls, hours, segments, the divergence between this model and the comparison model (WER of one
+          against the other, with a bootstrap interval resampled by call) and both mean confidences. shadowReplays.get
+          adds the night's most divergent segments.
+      parameters:
+        - { name: limit, in: query, description: "Nights to answer (default 60)", schema: { type: integer, minimum: 1, maximum: 366, default: 60 } }
+      responses:
+        "200":
+          description: Nights, newest first
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplayList" } } }
+        default: { $ref: "#/components/responses/Problem" }
+    post:
+      operationId: shadowReplays.new
+      summary: Replay the newest unreplayed calls of a shadow deployment now, instead of waiting for the night (GPU spend)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Start a shadow replay now: the newest calls of the deployment's replay mount not yet replayed, up to
+          deploy.shadow_replay_max_hours, decoded by the deployment's export and by the comparison model through the
+          staging server, then shadow_score@1. The nightly replay at deploy.shadow_replay_at does the same by itself;
+          one replay runs at a time per deployment (conflict). dryRun=true answers the calls it would take and the
+          estimate; the real call answers 201 with the replay, or 202 with an approvalId when the GPU spend needs a
+          person.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      responses:
+        "200":
+          description: Dry run — the replay as it would start (calls, hours, steps, estimate); nothing started
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplay" } } }
+        "201":
+          description: The replay, started
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplay" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /shadow-replays/{id}:
+    x-cadence: { entity: shadowReplays, kind: shadow_replay }
+    parameters:
+      - { name: id, in: path, required: true, description: "Shadow replay id (srp_…)", schema: { type: string, maxLength: 100 } }
+    get:
+      operationId: shadowReplays.get
+      summary: One night's shadow replay with its most divergent segments (texts kept deploy.shadow_artifact_retention_days)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          One night of a shadow replay with its most divergent segments (up to deploy.shadow_worst_segments): the
+          segment's audio hash and mount window, its call, both transcripts, their confidences and the WER of one
+          against the other. The texts come from production audio: they are kept deploy.shadow_artifact_retention_days
+          (textsEvictedAt once gone; the night's summary stays) and never reach an LLM judge before PII redaction.
+      responses:
+        "200":
+          description: The night
+          content: { application/json: { schema: { $ref: "#/components/schemas/ShadowReplay" } } }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- planned (later phases)
 
 components:
@@ -4907,6 +5620,7 @@ components:
         instructionsTemplate: { $ref: "#/components/schemas/InstructionsTemplateName" }
         repository: { $ref: "#/components/schemas/RepositoryChoice" }
         budgets: { $ref: "#/components/schemas/ProjectBudgetsEdit" }
+        bundle: { type: string, maxLength: 1000, description: "Make the project from a project bundle (projects.export): mount://<mount>/<dir>, the directory holding bundle.json. Choices sent here override the bundle's facts; the repository must be internal" }
     ProjectEdit:
       type: object
       additionalProperties: false
@@ -5380,7 +6094,7 @@ components:
 
     JobKind:
       type: string
-      enum: [training, eval, shadow, export, data, interactive]
+      enum: [training, eval, shadow, export, data, interactive, benchmark]
     ComputeCard:
       type: object
       required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
@@ -5391,6 +6105,7 @@ components:
         memoryGb: { type: number, format: double }
         memoryCapGb: { type: number, format: double, description: "The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)" }
         allowedJobKinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
+        servingReserveGb: { type: number, format: double, description: "Phase 5 (R30): the share of memoryCapGb a training step's whole-cap reservation leaves alone, for served models, shadow replay and live sessions (0: none)" }
         windows: { $ref: "#/components/schemas/AvailabilityWindows" }
         telemetry: { $ref: "#/components/schemas/CardTelemetryReport" }
     ComputeHealth:
@@ -5424,9 +6139,10 @@ components:
       properties:
         index: { type: integer, minimum: 0 }
         name: { type: string, minLength: 1, maxLength: 200 }
-        cardClass: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$", description: "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)" }
+        cardClass: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$", description: "Key into the estimate table in defaults.yaml (a corrected card: blackwell-96gb)" }
         memoryGb: { type: number, format: double, exclusiveMinimum: 0, description: "The card's memory; the cap must stay at or below it" }
         memoryCapGb: { type: number, format: double, exclusiveMinimum: 0 }
+        servingReserveGb: { type: number, format: double, minimum: 0, description: "The share of the cap kept for served models, shadow replay and live sessions; at most the cap (R30)" }
         allowedJobKinds: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/JobKind" } }
         windows: { $ref: "#/components/schemas/AvailabilityWindows" }
     ComputeEdit:
@@ -5438,7 +6154,8 @@ components:
 
     SecretKind:
       type: string
-      enum: [huggingface, ngc, github, s3, judge-api, telegram, other]
+      enum: [huggingface, ngc, github, s3, judge-api, telegram, signing, other]
+      description: "signing: the instance's Ed25519 promotion key (generated by Cadence, never stored through secrets.new)"
     SecretName:
       type: string
       pattern: "^[a-z][a-z0-9_-]{1,62}$"
@@ -5515,6 +6232,7 @@ components:
         card_class: { type: string }
         memory_gb: { type: number, format: double }
         memory_cap_gb: { type: number, format: double }
+        serving_reserve_gb: { type: number, format: double, description: "The share of the cap kept for served models, shadow replay and live sessions (R30)" }
         allowed_job_kinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
     DefaultHost:
       type: object
@@ -5557,6 +6275,8 @@ components:
         annotation: { $ref: "#/components/schemas/DefaultSection", description: "Annotation batches (phase 4): sample size, double share, agreement target, invitations, strata and the audio tracks' detector" }
         pseudolabel: { $ref: "#/components/schemas/DefaultSection", description: "Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)" }
         playbooks: { $ref: "#/components/schemas/DefaultSection", description: "Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)" }
+        deploy: { $ref: "#/components/schemas/DefaultSection", description: "Deployment (phase 5): parity and latency thresholds, the canary share and how long a promotion waits for its receipt" }
+        serving: { $ref: "#/components/schemas/DefaultSection", description: "Staging serving (phase 5): the staging target seeded at first start, the server kinds' health and model-control paths, a served model's memory, its idle unload and the health check" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -5679,6 +6399,7 @@ components:
             datasets: { type: array, items: { type: string }, description: Resolved dataset version ids }
             hours: { type: number, format: double }
             bytes: { type: integer, format: int64, description: What must be materialised on the worker's disk }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" }, description: "What the run's pipeline plan found that does not stop a dry run: a dataset version to materialize first (needs-materialize; the real call is refused until then), a deprecated step kind, an optional step skipped" }
         budget:
           type: object
           required: [gpuHoursPerProjectPerDay, withinDailyBudget]
@@ -7106,7 +7827,7 @@ components:
         gpus: { type: integer, minimum: 0, maximum: 1, description: "Cards (1 in v1, R44)" }
         memoryGb: { type: number, minimum: 0, description: Card memory the step needs; a training step takes the card's whole cap }
         diskGb: { type: number, minimum: 0 }
-        jobKind: { type: string, enum: [training, eval, export, data, interactive], description: "Which compute job kinds may take it (interactive: a live transcription session, R49)" }
+        jobKind: { type: string, enum: [training, eval, export, data, interactive, shadow, benchmark], description: "Which compute job kinds may take it (interactive: a live transcription session, R49; a generated pipeline may run a step as another kind: a serve step as eval, shadow or benchmark, phase 5)" }
     ModelFamilyDescriptor:
       type: object
       required: [name, version, framework, architecture, latencyProfiles, roles]
@@ -7137,6 +7858,16 @@ components:
           type: object
           description: "Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model; live serves transcription sessions, R48)"
           additionalProperties: { type: string }
+        exportFormats:
+          type: array
+          description: "Deployable formats the family's export role writes (phase 5): the format, the server kind it is built for, and which one is the default (data the control plane compares, never branches on)"
+          items:
+            type: object
+            required: [format]
+            properties:
+              format: { type: string, maxLength: 100 }
+              server: { type: string, maxLength: 40 }
+              default: { type: boolean }
         interactive:
           type: object
           required: [memoryMb]
@@ -7603,6 +8334,7 @@ components:
           required: [steps]
           properties:
             steps: { type: array, items: { $ref: "#/components/schemas/PipelineStep" } }
+            needsMaterialize: { type: array, items: { $ref: "#/components/schemas/NeedsMaterialize" }, description: "pipelineRuns.get only, for a run that is not done: dataset versions a training step that has not finished would read whose shards the cache evicted (a retry fails that step until datasets.materialize brings them back)" }
     PipelineRunList:
       type: object
       required: [items]
@@ -9001,6 +9733,7 @@ components:
           properties:
             model: { $ref: "#/components/schemas/ModelPayload" }
             usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+            exports: { type: array, items: { $ref: "#/components/schemas/ModelExport" }, description: "Deployables of this version, per latency profile and format, with their parity and benchmarks (phase 5; models.get)" }
     ModelVersionList:
       type: object
       required: [items]
@@ -9256,7 +9989,8 @@ components:
         clipped: { type: array, items: { type: integer }, description: "Frames where a sample of any channel reached full scale (at most 1000)" }
         encoding: { type: string, enum: [int8-minmax], description: "frames × channels × [min, max], int8, value / 127 = sample" }
         data: { type: string, format: byte, description: Base64 of the int8 bytes }
-        artifact: { type: string, description: "The cached 10 ms peaks artifact (b3:…)" }
+        artifact: { type: string, description: "The stored peaks artifact (b3:…; cadence.peaks/2: the 10 ms base level and coarser levels for long audio)" }
+        computed: { type: boolean, description: "True when this request computed the peaks from the audio (no stored peaks artifact: the first-view fallback)" }
     SpectrogramLevel:
       type: object
       required: [level, hopS, frames, tiles]
@@ -9279,8 +10013,10 @@ components:
         windowSamples: { type: integer }
         hopSamples: { type: integer }
         nFft: { type: integer }
-        bins: { type: integer, description: "Bins kept: up to the origin's Nyquist" }
+        bins: { type: integer, description: "Bins kept: up to the origin's Nyquist (4 kHz for narrowband audio)" }
         binHz: { type: number, format: double }
+        bandwidthHz: { type: number, format: double, description: "Estimated bandwidth of the audio (pyramids built by the control plane)" }
+        narrowband: { type: boolean, description: "The audio is of 8 kHz origin (bandwidth ≤ 4.2 kHz): bins stop at 4 kHz, the view draws a Nyquist line" }
         tileFrames: { type: integer }
         encoding:
           type: object
@@ -9320,8 +10056,9 @@ components:
       properties:
         utteranceId: { type: string }
         audio: { type: string, description: "The audio's content hash (b3:…)" }
-        text: { type: string, description: The hypothesis text }
+        text: { type: string, description: "The hypothesis text (empty without hypotheses)" }
         ref: { type: string, description: "The normalised reference (with scores)" }
+        reference: { $ref: "#/components/schemas/ReferenceWords" }
         words: { type: array, items: { $ref: "#/components/schemas/HypothesisWord" } }
         deletions: { type: array, items: { $ref: "#/components/schemas/DeletedWord" } }
         aligned: { type: boolean, description: "The scores' alignment was mapped onto the timed words (false without scores, or when the normaliser changed the word count)" }
@@ -9360,9 +10097,10 @@ components:
     TranscriptionTargetIn:
       type: object
       additionalProperties: false
-      description: "Exactly one of checkpointId, modelVersionId and baseModelVersionId"
+      description: "Exactly one of checkpointId, modelVersionId, baseModelVersionId and deploymentId"
       properties:
         checkpointId: { type: string, maxLength: 100, description: "A checkpoint of the project (ckp_…)" }
+        deploymentId: { type: string, maxLength: 100, description: "Phase 5 (R47): a deployment of the project (dep_…) whose export the staging target serves; the lane decodes through the staging server. A session's targets are all deployments or none" }
         modelVersionId: { type: string, maxLength: 200, description: "A model version (ver_…, model/<name>, or @alias)" }
         baseModelVersionId: { type: string, maxLength: 200, description: "A base model version (ver_…, base-model/<name>, or @alias)" }
         profile: { type: string, maxLength: 40, description: "Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)" }
@@ -9393,8 +10131,8 @@ components:
         pace: { type: string, enum: [realtime, fast] }
         blind: { type: boolean }
         family: { type: string, description: "The targets' model family" }
-        liveKind: { type: string, description: "The family's live role step kind (kind@version) that serves the session" }
-        reservationMb: { type: integer, description: "Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model" }
+        liveKind: { type: string, description: "The family's live role step kind (kind@version) that serves the session; for deployment targets its serve role in relay mode" }
+        reservationMb: { type: integer, description: "Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model; for deployment targets the served model's reservation (serving.model_memory_gb unless its deployable states one)" }
         position: { type: integer, description: "Place among the waiting interactive jobs (1 = next)" }
         reason: { type: string, description: "Why the session waits, when it does" }
         limits: { $ref: "#/components/schemas/TranscriptionLimits" }
@@ -9405,8 +10143,8 @@ components:
       required: [target, kind, id, label, family, profile, language, weightsKey]
       properties:
         target: { type: string, enum: [A, B, C], description: "The lane; live messages name it in target" }
-        kind: { type: string, enum: [checkpoint, model, base_model] }
-        id: { type: string, description: "ckp_… or ver_…" }
+        kind: { type: string, enum: [checkpoint, model, base_model, deployment] }
+        id: { type: string, description: "ckp_…, ver_… or dep_…" }
         label: { type: string, description: "What the lane runs (the page hides it until the person picks, when blind)" }
         family: { type: string }
         profile: { type: string }
@@ -10015,8 +10753,8 @@ components:
     # ---------------------------------------------------------------- interoperability: imports, exports, noise bank schemas (phase 4 · stream I) — add below
     DatasetExportFormat:
       type: string
-      enum: [lhotse-shar, nemo-manifest, cadence-bundle, hf-hub]
-      description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"
+      enum: [lhotse-shar, nemo-manifest, cadence-bundle, hf-hub, cadence-project-bundle]
+      description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval); cadence-project-bundle: a whole project (projects.export only; datasets.export refuses it)"
     DatasetExportRequest:
       type: object
       required: [version, format]
@@ -10083,7 +10821,10 @@ components:
         copies: { type: integer, description: "Content-store blobs the export placed on a mount unchanged (recorded as mount copies)" }
         sample: { type: array, items: { $ref: "#/components/schemas/DatasetExportFile" }, description: The first files written (up to 20) }
         hub: { $ref: "#/components/schemas/DatasetExportHub" }
-        error: { type: string, description: Why the export's pipeline run failed }
+        error: { type: string, description: Why the export's pipeline run (or job) failed }
+        jobId: { type: string, description: "cadence-project-bundle: the control-plane job that writes the bundle (no pipeline run)" }
+        commit: { type: string, description: "cadence-project-bundle: the repository commit bundled" }
+        versions: { type: integer, description: "cadence-project-bundle: registry versions carried" }
         createdBy: { $ref: "#/components/schemas/Actor" }
         approvalId: { type: string }
         createdAt: { type: string, format: date-time }
@@ -10094,6 +10835,141 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: "#/components/schemas/DatasetExport" } }
+    # ---------------------------------------------------------------- guidelines text, registry texts, needs materialize schemas (phase 4 tail · stream U) — add below
+    GuidelinesText:
+      type: object
+      description: "An annotation batch's guidelines as pinned (R27): annotation/guidelines/<name>.md at the batch's commit"
+      required: [name, path, commit, text, bytes, truncated]
+      properties:
+        name: { type: string }
+        path: { type: string, example: annotation/guidelines/default.md }
+        commit: { type: string, description: The commit the batch pinned }
+        text: { type: string, description: Markdown }
+        bytes: { type: integer, format: int64, description: The file's size }
+        truncated: { type: boolean, description: "The file is larger than 256 KiB: text holds its start" }
+    RegistryText:
+      type: object
+      description: "A text of the content store a registry version names to be read"
+      required: [hash, kind, mediaType, text, bytes, truncated, versionId]
+      properties:
+        hash: { type: string, pattern: "^b3:[0-9a-f]{64}$" }
+        kind: { type: string, enum: [dataset-card], description: "dataset-card: a dataset version's card (dataset.card)" }
+        mediaType: { type: string, example: text/markdown }
+        text: { type: string }
+        bytes: { type: integer, format: int64, description: The blob's size }
+        truncated: { type: boolean, description: "The blob is larger than 256 KiB: text holds its start" }
+        versionId: { type: string, description: "The registry version that names it (ver_…; the oldest when several do)" }
+        collection: { type: string, example: dataset/fleurs-sr }
+        version: { type: string }
+    NeedsMaterialize:
+      type: object
+      description: "A dataset version a training step would read whose shards the cache evicted (they are on a mount): training reads only what the cache holds, so the run is refused when it is queued until datasets.materialize brings them back"
+      required: [versionId, artifact, bytes, copyBytes, shards, copyShards, from, missing]
+      properties:
+        versionId: { type: string, description: "ver_…: the body of datasets.materialize" }
+        collection: { type: string }
+        version: { type: string }
+        artifact: { type: string, description: The evicted dataset artifact (b3:…) }
+        input: { type: string, description: "The step input that reads it (a dataset or a mix)" }
+        bytes: { type: integer, format: int64, description: The version's size }
+        copyBytes: { type: integer, format: int64, description: "Bytes datasets.materialize would copy back from mounts" }
+        shards: { type: integer }
+        copyShards: { type: integer }
+        from: { type: array, items: { $ref: "#/components/schemas/DatasetCacheSource" }, description: The mounts the copies come from }
+        missing: { type: integer, description: "Shards on no mount and in no cache: materialize cannot bring them back" }
+    # project bundles (phase 4 · tail · stream infra)
+    ProjectExportRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        ref: { type: string, maxLength: 200, description: "The branch or commit to export (default main)" }
+        target: { type: string, maxLength: 1000, description: "A directory on a writable path mount (mount://exports/<path>) that holds no bundle yet; default mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>" }
+    BundleVersion:
+      type: object
+      description: One registry version a project bundle carries
+      required: [id, kind, collection, version, adopted, blobs, bytes]
+      properties:
+        id: { type: string, description: "The version's id on the instance that wrote the bundle (ver_…)" }
+        kind: { $ref: "#/components/schemas/RegistryKind" }
+        collection: { type: string }
+        version: { type: string }
+        adopted: { type: boolean, description: "True when the project adopted it; false when an adopted version's payload names it" }
+        published: { type: boolean, description: "A runtime, step kind or model family: a reference only, never registered by an import" }
+        blobs: { type: integer, description: Content-store blobs carried for it }
+        bytes: { type: integer, format: int64 }
+        path: { type: string, description: "Its dataset bundle inside the project bundle (datasets/<name>/<version>), for dataset versions and noise banks" }
+    ProjectExportPlan:
+      type: object
+      required: [projectId, project, ref, commit, target, versions, aliases, blobs, bytes, sources]
+      properties:
+        projectId: { type: string }
+        project: { type: string, description: The project's slug }
+        ref: { type: string }
+        commit: { type: string, description: The commit the repository is bundled at }
+        target: { type: string, description: "mount://<mount>/<dir>" }
+        versions: { type: array, items: { $ref: "#/components/schemas/BundleVersion" } }
+        aliases: { type: array, items: { $ref: "#/components/schemas/BundleAlias" } }
+        blobs: { type: integer, description: Content-store blobs the bundle carries }
+        bytes: { type: integer, format: int64 }
+        sources: { type: array, items: { type: string }, description: Names of the sources the dataset versions hold }
+    BundleAlias:
+      type: object
+      required: [name, versionId]
+      properties:
+        name: { type: string }
+        versionId: { type: string, description: "The version in the bundle (its id there)" }
+        localVersionId: { type: string, description: "Import plan: the version here" }
+        action: { type: string, enum: [set, keep, skip], description: "Import plan: set (this project has no such alias), keep (it points there already), skip (this project's alias stays, or production)" }
+    BundleAdopt:
+      type: object
+      required: [bundle]
+      additionalProperties: false
+      properties:
+        bundle: { type: string, maxLength: 1000, description: "The bundle's directory on a mount: mount://<mount>/<dir> (the directory holding bundle.json)" }
+        aliases: { type: boolean, default: true, description: "Set the bundle's aliases this project does not have yet (production never)" }
+    BundleImportVersion:
+      type: object
+      required: [id, kind, collection, version, adopted, action]
+      properties:
+        id: { type: string, description: "The version's id in the bundle" }
+        kind: { $ref: "#/components/schemas/RegistryKind" }
+        collection: { type: string }
+        version: { type: string }
+        adopted: { type: boolean }
+        action: { type: string, enum: [register, reuse, reference, missing], description: "register: new here, registered from the bundle; reuse: this instance holds the same content; reference: published by workers, mapped to the version here; missing: a published version this instance lacks (payloads keep the bundle's id)" }
+        localId: { type: string, description: "The version here (reuse, reference)" }
+        blobs: { type: integer }
+        bytes: { type: integer, format: int64 }
+    BundlePlan:
+      type: object
+      required: [bundle, commit, project, versions, aliases, register, reuse, blobs, bytes, sources]
+      properties:
+        bundle: { type: string }
+        commit: { type: string, description: The commit the bundle's repository is at }
+        project:
+          type: object
+          required: [name, slug, locales, domain]
+          properties:
+            name: { type: string }
+            slug: { type: string }
+            description: { type: string }
+            locales: { type: array, items: { type: string } }
+            domain: { type: string }
+            baseModel: { type: string, description: "collection@version of its base model" }
+        createdAt: { type: string, format: date-time, description: When the bundle was written }
+        versions: { type: array, items: { $ref: "#/components/schemas/BundleImportVersion" } }
+        aliases: { type: array, items: { $ref: "#/components/schemas/BundleAlias" } }
+        register: { type: integer, description: Versions the import registers }
+        reuse: { type: integer, description: Versions this instance holds already }
+        blobs: { type: integer, description: Blobs to copy into the content store (those it lacks) }
+        bytes: { type: integer, format: int64 }
+        sources: { type: array, items: { type: string } }
+    BundleImport:
+      type: object
+      required: [jobId, plan]
+      properties:
+        jobId: { type: string, description: "Follow job.{jobId}; its result lists the versions registered, reused and adopted" }
+        plan: { $ref: "#/components/schemas/BundlePlan" }
     # ---------------------------------------------------------------- ingest, draft datasets, freeze schemas (phase 4 · stream D) — add below
     SourceNew:
       type: object
@@ -10189,6 +11065,7 @@ components:
             required: [rate, utterances]
             properties: { rate: { type: integer }, utterances: { type: integer } }
         speakers: { type: integer }
+        eou: { $ref: "#/components/schemas/DatasetEouStats" }
     DatasetShard:
       type: object
       description: "One shard of a frozen version: a Lhotse cuts manifest over the version's audio in the content store"
@@ -10402,10 +11279,11 @@ components:
       description: Something a plan found that does not stop the run
       required: [code, message]
       properties:
-        code: { type: string, enum: [step-kind-deprecated, auxiliary-unavailable, step-kind-unavailable], description: "step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start" }
+        code: { type: string, enum: [step-kind-deprecated, auxiliary-unavailable, step-kind-unavailable, needs-materialize], description: "step-kind-deprecated: a step pins a kind its pack deprecates; auxiliary-unavailable: an optional step's service does not answer, so the run goes on without that step (phase 4 · stream B); step-kind-unavailable: an optional step's kind is not published or no worker that publishes it is alive, so the step is skipped at start; needs-materialize: a training step would read a dataset version the cache evicted — a dry run says so with what to materialize, the real call is refused (artifact-missing) until datasets.materialize brings it back (phase 4 tail)" }
         step: { type: string, description: The step id }
         kind: { type: string, description: The pinned kind@version }
         message: { type: string }
+        materialize: { $ref: "#/components/schemas/NeedsMaterialize" }
     LockedReference:
       type: object
       description: "A step parameter that names a registry version (x-cadence.registry), resolved through the project's data.lock at the pipeline's commit"
@@ -10857,3 +11735,752 @@ components:
         earlyWords: { type: integer, description: Words shown before their aligned end (negative delays, kept) }
         unalignedUtterances: { type: integer }
         mismatchedUtterances: { type: integer, description: "Utterances whose alignment was made for another text, or whose words the normalizer does not tie to tokens" }
+    # ---------------------------------------------------------------- long audio and the reference track schemas (phase 4 tail · stream audio) — add below
+    ReferenceWord:
+      type: object
+      required: [index, word, start, end]
+      properties:
+        index: { type: integer, description: "Position of the word in the reference text split on whitespace" }
+        word: { type: string, description: The reference token as written }
+        start: { type: number, format: double, description: Seconds from the start of the audio }
+        end: { type: number, format: double }
+        score: { type: number, format: double, description: "Mean probability of the word's tokens over its frames (a low score marks a doubtful alignment)" }
+    ReferenceWords:
+      type: object
+      description: "The audio view's reference-word track (R51): the utterance's reference text at the times an alignment artifact (cadence.alignment/1, align_reference) gives its words. An unaligned reference carries its text and the reason, and no times: nothing is estimated"
+      required: [artifact, aligned, text, words]
+      properties:
+        artifact: { type: string, description: "The alignment artifact (b3:…)" }
+        aligned: { type: boolean }
+        text: { type: string, description: The reference exactly as the dataset has it }
+        language: { type: string }
+        words: { type: array, items: { $ref: "#/components/schemas/ReferenceWord" } }
+        skipped: { type: array, items: { type: integer }, description: "Indexes of reference tokens with no timing (punctuation only, or nothing the aligner can spell)" }
+        reason: { type: string, description: Why the reference stayed unaligned }
+        aligner: { type: string, description: "The aligner auxiliary (auxiliary/<name>)" }
+    DatasetEouStats:
+      type: object
+      description: "End-of-utterance gaps of the version's members (per-channel VAD at ingest, sdp_ingest): from a segment's last speech end to the other party's next speech start, for segments of multi-channel recordings"
+      required: [utterances, withGap]
+      properties:
+        utterances: { type: integer, description: "Members with an end-of-utterance record (segments of multi-channel recordings)" }
+        withGap: { type: integer, description: "Members whose other party spoke next within 10 s (a gap was measured)" }
+        overlapping: { type: integer, description: "Gaps below zero: the other party started before the speech ended (barge-in)" }
+        p50GapS: { type: number, format: double }
+        p90GapS: { type: number, format: double }
+        meanGapS: { type: number, format: double }
+        gapHistogram: { $ref: "#/components/schemas/DatasetHistogram" }
+    # ---------------------------------------------------------------- golden-set alignment in one run schemas (phase 4 tail · stream measure) — add below
+    GoldenSetAlign:
+      type: object
+      additionalProperties: false
+      properties:
+        goldenSets:
+          type: array
+          maxItems: 200
+          items: { type: string, minLength: 1, maxLength: 200 }
+          description: "ver_… ids, @aliases or collection names (golden-set/<name>, * patterns) of golden sets the project adopted; absent: every golden set the project adopted"
+        aligner: { type: string, maxLength: 200, description: "The aligner auxiliary (auxiliary/<name>, ver_… or @alias) the project adopted with the align role; absent: the aligning step kind's default" }
+        priority: { type: integer, minimum: -100, maximum: 100, default: 0 }
+    GoldenSetAlignSet:
+      type: object
+      required: [goldenSetVersionId, name, version, locale, utterances, hours, step]
+      properties:
+        goldenSetVersionId: { type: string }
+        name: { type: string, description: "golden-set/<name>" }
+        version: { type: string }
+        locale: { type: string }
+        utterances: { type: integer }
+        hours: { type: number, description: Audio hours of the golden set }
+        step: { type: string, description: "The aligning step's id in the run (golden sets on one dataset artifact share it)" }
+        estimateSeconds: { type: number }
+    GoldenSetAlignSkip:
+      type: object
+      required: [goldenSetVersionId, name, version, locale, reason, message]
+      properties:
+        goldenSetVersionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        locale: { type: string }
+        reason: { type: string, enum: [aligned, running, language], description: "aligned: its dataset artifact already has an alignment; running: an aligning step on it has not finished; language: the aligner does not cover the golden set's language" }
+        message: { type: string }
+        alignmentId: { type: string, description: "aln_… (reason aligned)" }
+        pipelineRunId: { type: string, description: "The run with the unfinished aligning step (reason running)" }
+    GoldenSetAlignPlan:
+      type: object
+      required: [kind, sets, skipped, estimate, secondsPerAudioHour, warnings]
+      properties:
+        kind: { type: string, description: "The aligning step kind (name@version): the newest published kind that turns one dataset into an alignment" }
+        aligner:
+          type: object
+          required: [name, version, versionId, languages]
+          description: The aligner auxiliary the steps resolve to for this project (absent when nothing is left to align)
+          properties:
+            name: { type: string }
+            version: { type: string }
+            versionId: { type: string }
+            languages: { type: array, items: { type: string }, description: "Primary language subtags it covers (* for any)" }
+        sets: { type: array, items: { $ref: "#/components/schemas/GoldenSetAlignSet" } }
+        skipped: { type: array, items: { $ref: "#/components/schemas/GoldenSetAlignSkip" } }
+        secondsPerAudioHour: { type: number, description: "defaults.yaml eval.align_seconds_per_audio_hour: wall seconds an aligning step spends per audio hour, on a card" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+    # ---------------------------------------------------------------- staging serving schemas (phase 5 · stream D2) — add below
+    ServingHealth:
+      type: object
+      required: [state]
+      description: "A staging target's server as the control plane's health check found it (every serving.health_check_seconds; 06 'Staging serving'). Delivery targets have none: Cadence never reaches them"
+      properties:
+        state: { type: string, enum: [unknown, up, down], description: "unknown until the first check" }
+        checkedAt: { type: string, format: date-time }
+        since: { type: string, format: date-time, description: When the state last changed }
+        detail: { type: string, description: "Why the server is down (the health call's error or status)" }
+        latencyMs: { type: integer, description: The health call's round trip }
+    ServedModel:
+      type: object
+      required: [model, deployableHash, memoryMb, state, leases]
+      description: "A model the serve steps loaded on a staging target: the control plane counts the leases that use it and unloads it once none has for serving.unload_idle_minutes"
+      properties:
+        model: { type: string, description: "The versioned model name on the server (cadence-<16 hex digits of the deployable's hash>)" }
+        deployableHash: { type: string, description: "The deployable artifact (b3:…)" }
+        memoryMb: { type: integer, description: "Card memory the model reserves (the deployable's serving.memoryMb, else serving.model_memory_gb)" }
+        state: { type: string, enum: [in-use, loaded, unloaded], description: "in-use: a lease uses it; loaded: idle on the server; unloaded: removed by the idle unload, or found gone" }
+        leases: { type: integer, description: Active leases that use the model }
+        lastUsedAt: { type: string, format: date-time, description: When the last lease that used it was granted or ended }
+        unloadedAt: { type: string, format: date-time }
+    # ---------------------------------------------------------------- model exports, parity, benchmarks schemas (phase 5 · stream D1) — add below
+    ModelExportDeployable:
+      type: object
+      description: "What deployable.json (cadence.deployable/1) says about serving the export, as data: the server, the engine and its precision, the memory and streams it was sized for"
+      properties:
+        format: { type: string }
+        server: { type: object, additionalProperties: true, description: "{kind, version, minVersion}: the server the model directory is built for" }
+        engine: { type: object, additionalProperties: true, description: "{kind, version, precision, tf32, cardClass, gpu, computeCapability}: an engine is specific to the card class and the engine version it was built with" }
+        modelDir: { type: string }
+        memoryMb: { type: integer, description: Card memory the served model reserves (engine, state pool for maxStreams, overhead) }
+        cudaMemoryPoolMb: { type: integer, description: "The server's CUDA memory pool the implicit state of maxStreams streams needs" }
+        maxStreams: { type: integer }
+        chunkMs: { type: integer }
+        precision: { type: string }
+        manifestSha256: { type: string, description: "SHA-256 of the model directory's sorted (sha256, path) lines; the delivery receipt's servedSha256 must equal it" }
+    ModelExportParity:
+      type: object
+      required: [state]
+      description: "The newest parity check of an export (R31)"
+      properties:
+        state: { type: string, enum: [pending, passed, failed], description: "pending while its pipeline runs; failed also when the run failed (error)" }
+        pipelineRunId: { type: string }
+        reportHash: { type: string, description: "The parity_report artifact (cadence.parity/1)" }
+        werDelta: { type: number, description: "WER(served) − WER(reference) on the sample, a fraction (0.001 = 0.1 points)" }
+        identicalShare: { type: number, description: Share of sample utterances with identical token sequences (else NFC text) }
+        disagreement: { type: number, description: "Word errors of the served transcripts against the reference's, per reference word" }
+        compared: { type: string, enum: [tokens, text] }
+        utterances: { type: integer }
+        reasons: { type: array, items: { type: string }, description: Which thresholds failed }
+        sample:
+          type: object
+          properties:
+            goldenSetVersionId: { type: string }
+            datasetHash: { type: string, description: "The sample dataset artifact (the first utterances by audio hash)" }
+            utterances: { type: integer }
+            selection: { type: string, description: "first-by-audio-hash" }
+        servedBy:
+          type: object
+          properties:
+            targetId: { type: string }
+            serverVersion: { type: string }
+        error: { type: string }
+        checkedAt: { type: string, format: date-time }
+    ModelExportBenchmark:
+      type: object
+      required: [state, budgetMs, streams]
+      description: "One benchmark of an export, newest first in exports[].benchmarks"
+      properties:
+        state: { type: string, enum: [running, done, failed] }
+        pipelineRunId: { type: string }
+        reportHash: { type: string, description: "The benchmark_report artifact (cadence.benchmark/1)" }
+        targetId: { type: string, description: "The target whose concurrency the verdict is taken at (absent: deploy.target_concurrency)" }
+        stagingTargetId: { type: string, description: The staging target the streams ran through }
+        serverVersion: { type: string }
+        cardClass: { type: string }
+        streams: { type: integer, description: The target concurrency the verdict is taken at }
+        levels: { type: array, items: { type: integer } }
+        p95ChunkLatencyMs: { type: number, description: "p95 latency per chunk from audio availability, at streams" }
+        p95TimeToFinalMs: { type: number, description: "p95 time to final, at streams" }
+        budgetMs: { type: number }
+        maxStreamsWithinBudget: { type: integer, description: "Streams per card: the largest level whose p95 stayed within the budget, every lower level within it too" }
+        contended: { type: boolean, description: Processes outside Cadence used the card during the verdict's level }
+        verdict: { type: string, enum: [passed, failed, inconclusive] }
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    ModelExport:
+      type: object
+      required: [id, modelVersionId, profile, format, state, projectId, benchmarks, rev, createdBy, createdAt, updatedAt]
+      description: "One deployable of a model version at a latency profile and format (model_exports, mex_…)"
+      properties:
+        id: { type: string, description: "mex_…" }
+        modelVersionId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        state: { type: string, enum: [exporting, exported, failed] }
+        deployableHash: { type: string, description: "The deployable artifact (cadence.deployable/1)" }
+        deployable: { $ref: "#/components/schemas/ModelExportDeployable" }
+        projectId: { type: string, description: The project whose budget ran the export }
+        pipelineRunId: { type: string }
+        error: { type: string }
+        parity: { $ref: "#/components/schemas/ModelExportParity" }
+        benchmarks: { type: array, items: { $ref: "#/components/schemas/ModelExportBenchmark" } }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ModelExportRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name> (its newest version the project adopted)" }
+        profiles: { type: array, maxItems: 10, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 50 }, description: "Latency profiles; default deploy.export_profiles (primary = eval.primary_profile)" }
+        format: { type: string, minLength: 1, maxLength: 100, description: "One of the family's export formats; default its first" }
+        priority: { type: integer, minimum: -100, maximum: 100 }
+    ModelExportPlanItem:
+      type: object
+      required: [profile, action]
+      properties:
+        profile: { type: string }
+        action: { type: string, enum: [export, exported, exporting], description: "export: a step runs; exported or exporting: the export exists and is answered as it is" }
+        exportId: { type: string }
+        step: { type: string, description: The pipeline step that exports this profile }
+        deployableHash: { type: string }
+    ModelExportPlan:
+      type: object
+      required: [modelVersionId, modelVersion, family, format, kind, profiles, estimate, warnings]
+      properties:
+        modelVersionId: { type: string }
+        modelVersion: { type: string, description: "model/<name> <version>" }
+        family: { type: string }
+        format: { type: string }
+        kind: { type: string, description: "The family's export step kind (name@version)" }
+        profiles: { type: array, items: { $ref: "#/components/schemas/ModelExportPlanItem" } }
+        stagingTargetId: { type: string, description: "The staging target whose card class and server version the engine is built for" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+        exports: { type: array, items: { $ref: "#/components/schemas/ModelExport" }, description: "The export rows after the call (real calls)" }
+    ModelCheckRequestBase:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name>" }
+        profile: { type: string, minLength: 1, maxLength: 50, description: "The export's latency profile; default the primary profile" }
+        format: { type: string, minLength: 1, maxLength: 100, description: "The export's format; default the family's first" }
+        goldenSet: { type: string, minLength: 1, maxLength: 200, description: "The golden set whose first utterances by audio hash are the sample: ver_…, @alias or golden-set/<name>; default the project's first target golden set" }
+        priority: { type: integer, minimum: -100, maximum: 100 }
+    ModelParityRequest:
+      $ref: "#/components/schemas/ModelCheckRequestBase"
+    ModelBenchmarkRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name>" }
+        profile: { type: string, minLength: 1, maxLength: 50, description: "The export's latency profile; default the target's primary profile, else the primary profile" }
+        format: { type: string, minLength: 1, maxLength: 100 }
+        goldenSet: { type: string, minLength: 1, maxLength: 200, description: "Where the streamed audio comes from (the parity sample of this golden set); default the export's parity sample, else the project's first target golden set" }
+        target: { type: string, minLength: 1, maxLength: 100, description: "The deployment target (dtg_… or name) whose concurrency the verdict is taken at; default deploy.target_concurrency" }
+        streams: { type: array, minItems: 1, maxItems: 12, uniqueItems: true, items: { type: integer, minimum: 1, maximum: 1024 }, description: "Concurrency levels; default deploy.benchmark_streams (the target's concurrency is always added)" }
+        secondsPerLevel: { type: number, minimum: 30, maximum: 1800, description: "default deploy.benchmark_seconds_per_level" }
+        priority: { type: integer, minimum: -100, maximum: 100 }
+    ModelCheckStep:
+      type: object
+      required: [step, kind]
+      properties:
+        step: { type: string }
+        kind: { type: string, description: "name@version" }
+        jobKind: { type: string, description: "The compute job kind the step runs as (a serve step runs as eval for parity, benchmark for a benchmark)" }
+    ModelCheckSample:
+      type: object
+      required: [goldenSetVersionId, name, version, locale, utterances, datasetHash, selection]
+      properties:
+        goldenSetVersionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        locale: { type: string }
+        language: { type: string, description: "The language both sides decode in (the golden set's locale, or the neighbour a model was trained under)" }
+        utterances: { type: integer, description: Utterances in the sample }
+        hours: { type: number }
+        datasetHash: { type: string, description: "The sample dataset artifact" }
+        selection: { type: string, description: "first-by-audio-hash" }
+    ModelCheckTarget:
+      type: object
+      required: [id, name, kind]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        serverVersion: { type: string }
+        cardClass: { type: string }
+        concurrency: { type: integer }
+    ModelParityPlan:
+      type: object
+      required: [modelVersionId, exportId, profile, format, sample, staging, thresholds, steps, estimate, warnings]
+      properties:
+        modelVersionId: { type: string }
+        exportId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        sample: { $ref: "#/components/schemas/ModelCheckSample" }
+        staging: { $ref: "#/components/schemas/ModelCheckTarget" }
+        concurrency: { type: integer, description: "Streams the served side decodes at once (deploy.parity_concurrency, the eval's batch)" }
+        thresholds:
+          type: object
+          required: [maxWerDelta, minIdenticalShare, maxDisagreement]
+          properties:
+            maxWerDelta: { type: number }
+            minIdenticalShare: { type: number }
+            maxDisagreement: { type: number }
+        steps: { type: array, items: { $ref: "#/components/schemas/ModelCheckStep" } }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+    ModelBenchmarkPlan:
+      type: object
+      required: [modelVersionId, exportId, profile, format, sample, staging, streams, targetStreams, budgetMs, secondsPerLevel, steps, estimate, warnings]
+      properties:
+        modelVersionId: { type: string }
+        exportId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        sample: { $ref: "#/components/schemas/ModelCheckSample" }
+        staging: { $ref: "#/components/schemas/ModelCheckTarget" }
+        target: { $ref: "#/components/schemas/ModelCheckTarget" }
+        streams: { type: array, items: { type: integer }, description: The levels, ascending }
+        targetStreams: { type: integer }
+        budgetMs: { type: number }
+        secondsPerLevel: { type: number }
+        steps: { type: array, items: { $ref: "#/components/schemas/ModelCheckStep" } }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+    # ---------------------------------------------------------------- deployment targets, promotion records, delivery schemas (phase 5 · stream D3) — add below
+    DeploymentTargetServes:
+      type: object
+      additionalProperties: false
+      required: [family, formats, profiles]
+      description: One model family the target serves, in which deployable formats and latency profiles (R46); compared as data
+      properties:
+        family: { type: string, minLength: 1, maxLength: 200, description: "A model-family collection name" }
+        formats: { type: array, minItems: 1, maxItems: 20, items: { type: string, minLength: 1, maxLength: 100 }, description: "Deployable formats the family's export role writes" }
+        profiles: { type: array, minItems: 1, maxItems: 20, items: { type: string, minLength: 1, maxLength: 50 }, description: "Latency profiles; the first is the primary profile the latency budget is checked at" }
+    DeploymentTargetServer:
+      type: object
+      additionalProperties: false
+      required: [kind, version]
+      properties:
+        kind: { type: string, pattern: "^[a-z][a-z0-9-]{0,39}$", description: "The inference server kind; the delivery script's server functions are chosen by it (templates/delivery/servers/<kind>.sh)" }
+        version: { type: string, minLength: 1, maxLength: 50 }
+    DeploymentTargetBoost:
+      type: object
+      additionalProperties: false
+      properties:
+        static: { type: boolean, description: Static boost lists ship as decoding configuration }
+        dynamic: { type: boolean, description: "The production pipeline sends a per-call boost field (R32 · confirm)" }
+        maxTermsPerCall: { type: integer, minimum: 0, maximum: 10000 }
+    DeploymentTargetNew:
+      type: object
+      additionalProperties: false
+      required: [name, kind, server]
+      properties:
+        name: { type: string, pattern: "^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$", description: "Lower-case letters, digits and dashes; never changes" }
+        kind: { type: string, enum: [staging, delivery], description: "staging: Cadence reaches it; delivery: only a person's delivery script does" }
+        description: { type: string, maxLength: 2000 }
+        serves: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/DeploymentTargetServes" } }
+        server: { $ref: "#/components/schemas/DeploymentTargetServer" }
+        endpoint: { type: string, maxLength: 500, description: "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one" }
+        repositoryPath: { type: string, maxLength: 500, description: "Delivery: the absolute path on the production host where the delivery script installs model directories" }
+        slots: { type: array, maxItems: 100, items: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,99}$" }, description: "The model names the production pipeline calls, one per locale or use" }
+        concurrency: { type: integer, minimum: 1, maximum: 512, description: "Streams the latency budget must hold at (absent: deploy.target_concurrency)" }
+        cardClass: { type: string, maxLength: 100, description: "The production card class; benchmarks on another class are shown as such" }
+        boost: { $ref: "#/components/schemas/DeploymentTargetBoost" }
+    DeploymentTargetEdit:
+      type: object
+      additionalProperties: false
+      description: "The fields to change (absent: unchanged); serves, server, repositoryPath and slots are named by promotion records"
+      properties:
+        description: { type: string, maxLength: 2000 }
+        serves: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/DeploymentTargetServes" } }
+        server: { $ref: "#/components/schemas/DeploymentTargetServer" }
+        endpoint: { type: string, maxLength: 500, description: "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one" }
+        repositoryPath: { type: string, maxLength: 500, description: "Delivery: the absolute path on the production host where the delivery script installs model directories" }
+        slots: { type: array, maxItems: 100, items: { type: string, pattern: "^[a-z0-9][a-z0-9._-]{0,99}$" }, description: "The model names the production pipeline calls, one per locale or use" }
+        concurrency: { type: integer, minimum: 1, maximum: 512, description: "Streams the latency budget must hold at (absent: deploy.target_concurrency)" }
+        cardClass: { type: string, maxLength: 100, description: "The production card class; benchmarks on another class are shown as such" }
+        boost: { $ref: "#/components/schemas/DeploymentTargetBoost" }
+    DeploymentTargetChain:
+      type: object
+      required: [records, headSeq, headHash]
+      description: The head of a delivery target's promotion record chain
+      properties:
+        records: { type: integer }
+        headSeq: { type: integer }
+        headHash: { type: string, description: "SHA-256 (hex) of the newest record's canonical form" }
+        pending: { type: integer, description: Promotions and rollbacks waiting for their receipt }
+    DeploymentTarget:
+      type: object
+      required: [id, name, kind, serves, server, slots, state, rev, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "dtg_…" }
+        name: { type: string }
+        kind: { type: string, enum: [staging, delivery] }
+        description: { type: string }
+        serves: { type: array, items: { $ref: "#/components/schemas/DeploymentTargetServes" } }
+        server: { $ref: "#/components/schemas/DeploymentTargetServer" }
+        endpoint: { type: string }
+        repositoryPath: { type: string }
+        slots: { type: array, items: { type: string } }
+        concurrency: { type: integer, description: "Streams the latency budget holds at (deploy.target_concurrency when the target names none)" }
+        cardClass: { type: string }
+        boost: { $ref: "#/components/schemas/DeploymentTargetBoost" }
+        state: { type: string, enum: [active, archived] }
+        chain: { $ref: "#/components/schemas/DeploymentTargetChain" }
+        health: { $ref: "#/components/schemas/ServingHealth" }
+        servedModels: { type: array, items: { $ref: "#/components/schemas/ServedModel" }, description: "Staging targets: the models the serve steps loaded, with their lease counts (phase 5 · stream D2)" }
+        approvalId: { type: string, description: The approval that created the target }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        archivedAt: { type: string, format: date-time }
+    SigningKey:
+      type: object
+      required: [id, alg, publicKeyPem, state, createdAt]
+      description: "An instance signing key: the public half only (the private key is a sealed secret of kind signing)"
+      properties:
+        id: { type: string, description: "ed25519:<hex of the first 16 bytes of the SHA-256 of the 32-byte public key>" }
+        alg: { type: string, enum: [Ed25519] }
+        publicKeyPem: { type: string, description: "SubjectPublicKeyInfo PEM: the file a person installs as /etc/cadence/instance.pub on a production host" }
+        state: { type: string, enum: [current, retired] }
+        createdAt: { type: string, format: date-time }
+        retiredAt: { type: string, format: date-time }
+    DeploymentTargetList:
+      type: object
+      required: [items, signingKeys]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DeploymentTarget" } }
+        signingKeys: { type: array, items: { $ref: "#/components/schemas/SigningKey" }, description: "The current key first, then retired ones, newest first" }
+    PromotionDelivery:
+      type: object
+      required: [state]
+      description: A promotion's or rollback's delivery bundle (cadence.delivery/1)
+      properties:
+        state: { type: string, enum: [building, ready, failed] }
+        jobId: { type: string }
+        artifactHash: { type: string, description: "The delivery artifact in the content store (b3:…)" }
+        error: { type: string }
+        script: { type: string, description: The text of deliver.sh }
+        smoke:
+          type: object
+          required: [utterances, required]
+          properties:
+            utterances: { type: integer, description: Smoke utterances in the bundle }
+            required: { type: integer, description: "How many must match the staging text (deploy.parity_min_identical_share)" }
+        bundleUrl: { type: string, description: "People only: a short-lived signed link to delivery.get" }
+        bundleUrlExpiresAt: { type: string, format: date-time }
+    PromotionRecord:
+      type: object
+      required: [id, targetId, seq, kind, hash, prevHash, signature, keyId, canonical, body, verified, createdAt, rev]
+      properties:
+        id: { type: string, description: "prm_…" }
+        targetId: { type: string }
+        seq: { type: integer, description: Position in the target's chain, from 1 }
+        kind: { type: string, enum: [genesis, promotion, rollback, confirmation, withdrawal, target-changed, key-rotation] }
+        slot: { type: string }
+        projectId: { type: string }
+        deploymentId: { type: string }
+        refersTo: { type: string, description: "The promotion or rollback a confirmation or withdrawal closes" }
+        hash: { type: string, description: "SHA-256 (hex) of the canonical form" }
+        prevHash: { type: string, description: "The previous record's hash (64 zeros for genesis)" }
+        signature: { type: string, description: "Ed25519 over the 32 hash bytes, base64" }
+        keyId: { type: string }
+        canonical: { type: string, description: "The record exactly as signed: JSON in RFC 8785 canonical form" }
+        body: { type: object, additionalProperties: true, description: The canonical form parsed }
+        verified: { type: boolean, description: "The hash, signature, key and chain position hold, checked on this read" }
+        problems: { type: array, items: { type: string }, description: Why the record does not verify }
+        state: { type: string, enum: [pending, confirmed, withdrawn], description: "Promotions and rollbacks only" }
+        closedBy: { type: string, description: "The confirmation or withdrawal record that closed a promotion or rollback" }
+        delivery: { $ref: "#/components/schemas/PromotionDelivery" }
+        publicKeyPem: { type: string, description: The public key of keyId }
+        rev: { type: integer, description: "1 while pending (or for records that close nothing), 2 once closed" }
+        createdAt: { type: string, format: date-time }
+    PromotionChain:
+      type: object
+      required: [targetId, targetName, intact, items]
+      properties:
+        targetId: { type: string }
+        targetName: { type: string }
+        intact: { type: boolean, description: "Every record verifies, seq runs from 1 without a gap and each prevHash is the previous record's hash" }
+        problems: { type: array, items: { type: string } }
+        items: { type: array, items: { $ref: "#/components/schemas/PromotionRecord" } }
+    PromotionVerify:
+      type: object
+      additionalProperties: false
+      required: [receipt]
+      properties:
+        receipt: { type: string, minLength: 1, maxLength: 2000, description: "The CADENCE-RECEIPT line deliver.sh printed (surrounding text is ignored)" }
+    # ---------------------------------------------------------------- deployments, shadow replay schemas (phase 5 · stream D4) — add below
+    DeploymentStage:
+      type: string
+      enum: [shadow, canary, production, retired]
+      description: "shadow: on the staging target, no effect on calls; canary: a traffic share of a delivery target's slot; production: the slot's whole traffic; retired: replaced or rolled back"
+    DeploymentState:
+      type: string
+      enum: [active, pending-delivery, rolled-back, retired]
+      description: "pending-delivery: a promotion or rollback record waits for its receipt (promotions.verify); the stage moves only when it is confirmed"
+    DeploymentReplay:
+      type: object
+      additionalProperties: false
+      required: [mount, source]
+      description: "The call recordings a shadow deployment replays every night (R32 · е: Эра's recordings mount; calls-synth-sr stands in)"
+      properties:
+        mount: { type: string, minLength: 1, maxLength: 100, description: "A registered mount (name or mnt_…)" }
+        path: { type: string, maxLength: 1000, description: "The directory under the mount that holds the calls (default the mount's root)" }
+        source: { type: string, minLength: 2, maxLength: 100, description: "The registered source the recordings belong to (sources.new; no licence, no ingest)" }
+        language: { type: string, maxLength: 35, description: "Language of the calls (BCP 47); default the language the model's gating eval decoded its first target golden set in" }
+        channelRoles: { type: array, maxItems: 8, items: { type: string, enum: [caller, bot, mono] }, description: "Role of each channel when a call has no sidecar (default [caller, bot])" }
+    DeploymentNew:
+      type: object
+      additionalProperties: false
+      required: [version, replay]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name>" }
+        profile: { type: string, minLength: 1, maxLength: 50, description: "The export's latency profile; default the primary profile" }
+        format: { type: string, minLength: 1, maxLength: 100, description: "The export's format; default the family's first" }
+        replay: { $ref: "#/components/schemas/DeploymentReplay" }
+        against: { type: string, minLength: 1, maxLength: 200, description: "The model the shadow is compared with (ver_…, @alias or model/<name>, or a base model version); default the model of the project's production deployment, else @baseline" }
+    DeploymentBoostList:
+      type: object
+      required: [locale, domain, sha256, weight]
+      description: "A static boost list shipped as decoding configuration (03 'Hot words'): the language pack's lang/<locale>/boost/<domain>.txt as {terms, weight}"
+      properties:
+        locale: { type: string }
+        domain: { type: string }
+        hash: { type: string, description: "The boost_list artifact (b3:…)" }
+        sha256: { type: string, description: "SHA-256 of the list's canonical JSON, as the record names it" }
+        weight: { type: number }
+        terms: { type: integer }
+        commit: { type: string, description: "The project repository commit the list was read at" }
+    DeploymentDecoding:
+      type: object
+      required: [boostLists]
+      properties:
+        boostLists: { type: array, items: { $ref: "#/components/schemas/DeploymentBoostList" } }
+    DeploymentShadow:
+      type: object
+      required: [hours, calls, utterances, nights, minHours]
+      description: "Shadow progress: what the nightly replays decoded so far (each call once, by its duration)"
+      properties:
+        hours: { type: number }
+        calls: { type: integer }
+        utterances: { type: integer, description: Segments compared }
+        nights: { type: integer, description: Replays that finished }
+        minHours: { type: number, description: "deploy.shadow_min_hours: what a canary needs" }
+        divergence:
+          type: object
+          description: "WER of this model against the comparison model over every replayed segment, with the bootstrap interval resampled by call (R54), from the newest night that has one"
+          properties:
+            wer: { type: number }
+            ci: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+        against:
+          type: object
+          description: The model the shadow is compared with
+          properties:
+            kind: { type: string, enum: [model, base_model] }
+            versionId: { type: string }
+            label: { type: string }
+            deploymentId: { type: string, description: "The production deployment whose model it is, when it is one" }
+        lastReplayAt: { type: string, format: date-time }
+        nextReplayAt: { type: string, format: date-time, description: "When the next nightly replay starts (deploy.shadow_replay_at in policies.timezone)" }
+    DeploymentPending:
+      type: object
+      required: [recordId, kind, stage, targetId]
+      description: A promotion or rollback that waits for its receipt
+      properties:
+        recordId: { type: string }
+        kind: { type: string, enum: [promotion, rollback] }
+        stage: { $ref: "#/components/schemas/DeploymentStage" }
+        targetId: { type: string }
+        slot: { type: string }
+        trafficShare: { type: number }
+        configOnly: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    DeploymentStep:
+      type: object
+      required: [kind, createdAt]
+      description: "One step of a deployment's history"
+      properties:
+        kind: { type: string, enum: [created, promotion, rollback, confirmation, withdrawal, retired, restored] }
+        fromStage: { $ref: "#/components/schemas/DeploymentStage" }
+        toStage: { $ref: "#/components/schemas/DeploymentStage" }
+        recordId: { type: string, description: "The promotion record of the step (prm_…)" }
+        targetId: { type: string }
+        slot: { type: string }
+        trafficShare: { type: number }
+        decoding: { $ref: "#/components/schemas/DeploymentDecoding" }
+        reason: { type: string }
+        approvalId: { type: string }
+        actor: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+    Deployment:
+      type: object
+      required: [id, projectId, modelVersionId, modelVersion, exportId, profile, format, targetId, targetName, stage, state, decoding, history, rev, createdBy, createdAt, updatedAt]
+      properties:
+        id: { type: string, description: "dep_…" }
+        projectId: { type: string }
+        modelVersionId: { type: string }
+        modelVersion: { type: string, description: "model/<name> <version>" }
+        family: { type: string }
+        exportId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        deployableHash: { type: string }
+        targetId: { type: string, description: "The staging target for a shadow; the delivery target for canary and production" }
+        targetName: { type: string }
+        slot: { type: string }
+        modelName: { type: string, description: "The versioned model name on the delivery target (slot and version), once promoted" }
+        stage: { $ref: "#/components/schemas/DeploymentStage" }
+        state: { $ref: "#/components/schemas/DeploymentState" }
+        trafficShare: { type: number, description: Canary only }
+        decoding: { $ref: "#/components/schemas/DeploymentDecoding" }
+        replay: { $ref: "#/components/schemas/DeploymentReplay" }
+        shadow: { $ref: "#/components/schemas/DeploymentShadow" }
+        pending: { $ref: "#/components/schemas/DeploymentPending" }
+        history: { type: array, items: { $ref: "#/components/schemas/DeploymentStep" }, description: "Oldest first" }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DeploymentList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Deployment" } }
+    DeploymentBoostRequest:
+      type: object
+      additionalProperties: false
+      required: [locale, domain]
+      properties:
+        locale: { type: string, minLength: 2, maxLength: 35, description: "The language pack's locale (lang/<locale>)" }
+        domain: { type: string, minLength: 1, maxLength: 64, description: "The list: lang/<locale>/boost/<domain>.txt" }
+        ref: { type: string, maxLength: 100, description: "The repository commit or branch to read it at (default main)" }
+        weight: { type: number, format: double, minimum: 0, maximum: 100, description: "Overrides the list's own weight" }
+    DeploymentPromote:
+      type: object
+      additionalProperties: false
+      required: [stage, reason]
+      properties:
+        stage: { type: string, enum: [canary, production] }
+        target: { type: string, minLength: 1, maxLength: 100, description: "The delivery target (dtg_… or name); default the deployment's own once it is on one" }
+        slot: { type: string, minLength: 1, maxLength: 100, description: "The target's slot; default the deployment's own once it has one" }
+        trafficShare: { type: number, format: double, minimum: 0.01, maximum: 0.5, description: "Canary only; default deploy.canary_share" }
+        decoding:
+          type: object
+          additionalProperties: false
+          properties:
+            boostLists: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/DeploymentBoostRequest" }, description: "Static boost lists shipped as decoding configuration; absent keeps the deployment's, [] ships none" }
+        reason: { type: string, minLength: 1, maxLength: 2000, description: "Why: it goes into the signed record" }
+    DeploymentRollback:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 2000, description: "Why: it goes into the signed record" }
+    DeploymentCheck:
+      type: object
+      required: [name, state]
+      properties:
+        name: { type: string, enum: [target-serves, engine, parity, benchmark, shadow, slot-free, canary, rollback, not-pending] }
+        state: { type: string, enum: [passed, failed, skipped, warning] }
+        problemType: { type: string, description: "The problem a failing check answers (its help page: docs/help/errors/<type>.md)" }
+        detail: { type: string }
+    DeploymentPromotion:
+      type: object
+      required: [deploymentId, kind, stage, checks, ready]
+      properties:
+        deploymentId: { type: string }
+        kind: { type: string, enum: [promotion, rollback] }
+        stage: { $ref: "#/components/schemas/DeploymentStage" }
+        targetId: { type: string }
+        targetName: { type: string }
+        slot: { type: string }
+        trafficShare: { type: number }
+        configOnly: { type: boolean, description: "Same deployable as the slot runs: only the decoding configuration changes" }
+        checks: { type: array, items: { $ref: "#/components/schemas/DeploymentCheck" } }
+        ready: { type: boolean, description: "Every check passed (warnings shown, not refused)" }
+        body: { type: object, additionalProperties: true, description: "The record's own fields (stage, model, deployable, decoding, previous, evidence) as it would be signed" }
+        deployment: { $ref: "#/components/schemas/Deployment" }
+        record: { $ref: "#/components/schemas/PromotionRecord" }
+    ShadowSegment:
+      type: object
+      required: [audio, wer]
+      description: "One replayed segment: the caller's speech in a window of a call"
+      properties:
+        audio: { type: string, description: "The segment's audio (b3:…, its canonical 16 kHz WAV): audio.get plays it while the night's texts are kept" }
+        uri: { type: string, description: "The window of the call on the mount (mount://…#t=…&ch=…)" }
+        call: { type: string, description: The call (its mount URI) }
+        start: { type: number }
+        end: { type: number }
+        duration: { type: number }
+        wer: { type: number, description: "WER of this model's transcript against the comparison model's" }
+        errors: { type: integer }
+        words: { type: integer }
+        candidate: { type: string, description: "This deployment's transcript" }
+        current: { type: string, description: "The comparison model's transcript" }
+        candidateConfidence: { type: number }
+        currentConfidence: { type: number }
+    ShadowReplay:
+      type: object
+      required: [id, deploymentId, projectId, night, state, createdAt]
+      properties:
+        id: { type: string, description: "srp_…" }
+        deploymentId: { type: string }
+        projectId: { type: string }
+        night: { type: string, format: date, description: "The night it replayed (policies.timezone)" }
+        trigger: { type: string, enum: [nightly, manual] }
+        state: { type: string, enum: [planned, running, done, failed, skipped] }
+        reason: { type: string, description: "Why it was skipped or failed" }
+        pipelineRunId: { type: string }
+        calls: { type: integer, description: "Calls replayed (planned: selected)" }
+        hours: { type: number }
+        utterances: { type: integer }
+        divergence:
+          type: object
+          properties:
+            wer: { type: number }
+            ci: { type: array, items: { type: number }, minItems: 2, maxItems: 2 }
+            level: { type: number }
+        confidence:
+          type: object
+          properties:
+            candidate: { type: number }
+            current: { type: number }
+        against:
+          type: object
+          properties:
+            kind: { type: string, enum: [model, base_model] }
+            versionId: { type: string }
+            label: { type: string }
+            decodedBy: { type: string, enum: [serve, transcribe], description: "serve: its export through the staging server; transcribe: the family's own decoder (no export of it at the profile)" }
+        reportHash: { type: string, description: "The shadow_report artifact (cadence.shadow/1)" }
+        worst: { type: array, items: { $ref: "#/components/schemas/ShadowSegment" }, description: "shadowReplays.get only: the most divergent segments" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        textsEvictedAt: { type: string, format: date-time, description: "When the night's texts and audio left the store (deploy.shadow_artifact_retention_days); the summary stays" }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    ShadowReplayList:
+      type: object
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/ShadowReplay" } }

@@ -32,6 +32,13 @@ inconclusive: "per-utterance scores evicted (older than 30 days); re-run the eva
 mirror keeps what it copied: it is not pruned when the store evicts (it has its own set retention,
 `backups.keep_nightly` and `backups.keep_weekly`, for the database dumps only).
 
+**Spectrogram tile pyramids by last view** (phase 4 tail). The pyramids the control plane builds for long audio on its
+first view (`media.spectrogram`, ≈ 185 MB per hour of audio per channel) are a view cache: a daily sweep
+(`mediaTiles.retention`) evicts those not viewed for `media.tiles_retention_days` (14), as the system actor and
+without an approval, for good — the backup mirror is not waited for, because the next view of the audio builds the
+pyramid again (*Building the spectrogram…*). Pyramids a pipeline step wrote are not taken. The audit entry carries
+`tilesRetentionDays`.
+
 ## Fields and defaults
 
 What is evictable (v1: type `training-state` only):

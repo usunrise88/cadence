@@ -187,16 +187,50 @@ func TestTrainingRefusesEvictedAndUnlicensedData(t *testing.T) {
 		t.Fatalf("fitmix on the cached corpus: %d %s", code, d)
 	}
 
-	// C6. The cache evicted the corpus: a run on it or on a mix of it is refused at the dry run, naming
-	// datasets.materialize (the queue asks the same question of a training step's inputs).
+	// A run started on the cached corpus, its training step still waiting for a worker.
+	var started struct{ ID string }
+	e.ok(e.do("POST", "/api/projects/hebrew/pipelines/fit:run", `{"inputs":{"data":`+ref(train.Hash, "dataset")+`}}`,
+		"Idempotency-Key", e.key(), "If-Match", "*"), 201, &started)
+	type needs struct {
+		VersionID, Artifact, Input string
+		Bytes                      int64
+	}
+	var run struct{ NeedsMaterialize []needs }
+	e.ok(e.do("GET", "/api/pipeline-runs/"+started.ID, ""), 200, &run)
+	if len(run.NeedsMaterialize) != 0 {
+		t.Fatalf("needs materialize on a cached corpus: %+v", run.NeedsMaterialize)
+	}
+
+	// C6. The cache evicted the corpus: a dry run of a run on it or on a mix of it answers a needs-materialize warning
+	// naming the version and datasets.materialize; the real call is refused (artifact-missing), and the queue asks the
+	// same question of a training step's inputs.
 	if _, err := e.pool.Exec(ctx, `UPDATE artifacts SET evicted_at = now() WHERE hash = $1`, train.Hash); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct{ name, input, body string }{{"fit", "data", ref(train.Hash, "dataset")}, {"fitmix", "mix", mix}} {
-		code, d, _ := post(c.name, c.input, c.body, true)
+		var plan struct {
+			Warnings []struct {
+				Code, Step, Message string
+				Materialize         *needs
+			}
+		}
+		e.ok(e.do("POST", "/api/projects/hebrew/pipelines/"+c.name+":run?dryRun=true", `{"inputs":{"`+c.input+`":`+c.body+`}}`,
+			"Idempotency-Key", e.key(), "If-Match", "*"), 200, &plan)
+		if len(plan.Warnings) != 1 || plan.Warnings[0].Code != "needs-materialize" || plan.Warnings[0].Step != "fit" ||
+			plan.Warnings[0].Materialize == nil || plan.Warnings[0].Materialize.VersionID != trainID ||
+			plan.Warnings[0].Materialize.Artifact != train.Hash || plan.Warnings[0].Materialize.Input != c.input ||
+			!strings.Contains(plan.Warnings[0].Message, "datasets.materialize") {
+			t.Errorf("%s dry run on an evicted dataset: %+v", c.name, plan.Warnings)
+		}
+		code, d, _ := post(c.name, c.input, c.body, false)
 		if code != 409 || !strings.Contains(d, "artifact-missing") || !strings.Contains(d, "datasets.materialize") || !strings.Contains(d, trainID) {
 			t.Errorf("%s on an evicted dataset: %d %s", c.name, code, d)
 		}
+	}
+	// The run started before the eviction: its waiting training step would read it.
+	e.ok(e.do("GET", "/api/pipeline-runs/"+started.ID, ""), 200, &run)
+	if len(run.NeedsMaterialize) != 1 || run.NeedsMaterialize[0].VersionID != trainID || run.NeedsMaterialize[0].Input != "data" {
+		t.Errorf("needs materialize of a started run: %+v", run.NeedsMaterialize)
 	}
 	if _, err := e.pool.Exec(ctx, `UPDATE artifacts SET evicted_at = NULL WHERE hash = $1`, train.Hash); err != nil {
 		t.Fatal(err)

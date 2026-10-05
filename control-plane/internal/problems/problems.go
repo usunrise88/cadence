@@ -96,6 +96,7 @@ var (
 	MediaLinkInvalid    = Type{"media-link-invalid", http.StatusForbidden, "Audio link invalid or expired"}
 	RangeNotSatisfiable = Type{"range-not-satisfiable", http.StatusRequestedRangeNotSatisfiable, "Range not satisfiable"}
 	MediaBusy           = Type{"media-busy", http.StatusTooManyRequests, "Audio conversions busy"}
+	MediaTilesFailed    = Type{"media-tiles-failed", http.StatusUnprocessableEntity, "Spectrogram tiles could not be built"}
 	// Experiments and sweeps (phase 3 · stream X).
 	SweepOverCap = Type{"sweep-over-cap", http.StatusUnprocessableEntity, "Sweep over its GPU-hour cap"}
 	// Manual transcription tests and the live channel (phase 3 · stream T).
@@ -121,11 +122,30 @@ var (
 	NotAdopted             = Type{"not-adopted", http.StatusUnprocessableEntity, "Not in the project's data.lock"}
 	// Interoperability: dataset exports (phase 4 · stream I).
 	ExportNotAllowed = Type{"export-not-allowed", http.StatusUnprocessableEntity, "Export not allowed"}
+	// Project bundles (phase 4 tail): projects.export, bundles.adopt, projects.new with bundle.
+	BundleInvalid = Type{"bundle-invalid", http.StatusUnprocessableEntity, "Project bundle invalid"}
 	// Annotation batches and reviewer invitations (phase 4 · stream A).
 	BatchIncomplete        = Type{"batch-incomplete", http.StatusConflict, "Annotation batch incomplete"}
 	AnnotationAgreementLow = Type{"annotation-agreement-low", http.StatusConflict, "Inter-annotator agreement too low"}
 	BatchClosed            = Type{"batch-closed", http.StatusConflict, "Annotation batch closed"}
 	InvitationInvalid      = Type{"invitation-invalid", http.StatusUnauthorized, "Invitation invalid"}
+	// Promotion records and delivery (phase 5 · stream D3).
+	PromotionReceiptMismatch = Type{"promotion-receipt-mismatch", http.StatusUnprocessableEntity, "Promotion receipt mismatch"}
+	DeliveryLinkInvalid      = Type{"delivery-link-invalid", http.StatusForbidden, "Delivery bundle link invalid or expired"}
+	// Staging serving (phase 5 · stream D2).
+	ServingUnavailable = Type{"serving-unavailable", http.StatusServiceUnavailable, "Staging server unavailable"}
+	ServingOverCap     = Type{"serving-over-cap", http.StatusConflict, "Served model over its memory reservation"}
+	TargetDoesNotServe = Type{"target-does-not-serve", http.StatusUnprocessableEntity, "Target does not serve this model"}
+	// Model exports, parity and benchmarks (phase 5 · stream D1); the last three are what a canary promotion's
+	// checks answer (stream D4).
+	ExportMissing         = Type{"export-missing", http.StatusUnprocessableEntity, "Model export missing"}
+	ParityFailed          = Type{"parity-failed", http.StatusUnprocessableEntity, "Parity check not passed"}
+	LatencyBudgetExceeded = Type{"latency-budget-exceeded", http.StatusUnprocessableEntity, "Latency budget exceeded"}
+	BenchmarkMissing      = Type{"benchmark-missing", http.StatusUnprocessableEntity, "Benchmark missing"}
+	// Deployments (phase 5 · stream D4): the rest of the promotion checks.
+	ShadowVolumeShort   = Type{"shadow-volume-short", http.StatusUnprocessableEntity, "Shadow volume short"}
+	CanaryRequired      = Type{"canary-required", http.StatusUnprocessableEntity, "Canary required"}
+	RollbackUnavailable = Type{"rollback-unavailable", http.StatusUnprocessableEntity, "Rollback unavailable"}
 )
 
 // Types lists every registered type.
@@ -140,7 +160,7 @@ func Types() []Type {
 		FamilyUnavailable, RecipeMismatch, NoTrainingState, ArtifactNotEvictable, ArtifactEvicted,
 		EvalBaselineMissing, GateNotPassed, GateConfigInvalid,
 		GoldenSetLeakage, GoldenSetNotEvalOnly, NormalizerUnknown,
-		MediaLinkInvalid, RangeNotSatisfiable, MediaBusy,
+		MediaLinkInvalid, RangeNotSatisfiable, MediaBusy, MediaTilesFailed,
 		SweepOverCap,
 		TranscriptionInProgress, TranscriptionAllowanceExhausted, TranscriptionTicketInvalid, TranscriptionInputInvalid,
 		TranscriptionLimit,
@@ -148,8 +168,12 @@ func Types() []Type {
 		MountUnhealthy, StorageQuotaExceeded,
 		AuxiliaryUnavailable, AuxiliaryLicenceRefused,
 		LicenceForbidsAdoption, LocaleMismatch, VersionInUse, StepKindDeprecated, NotAdopted,
-		ExportNotAllowed,
+		ExportNotAllowed, BundleInvalid,
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
+		PromotionReceiptMismatch, DeliveryLinkInvalid,
+		ServingUnavailable, ServingOverCap, TargetDoesNotServe,
+		ExportMissing, ParityFailed, LatencyBudgetExceeded, BenchmarkMissing,
+		ShadowVolumeShort, CanaryRequired, RollbackUnavailable,
 	}
 }
 

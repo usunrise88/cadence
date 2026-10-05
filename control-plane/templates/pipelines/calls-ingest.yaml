@@ -17,7 +17,7 @@ name: calls-ingest
 description: Index stereo call recordings on a mount into a segments artifact, the frame of an annotation batch
 steps:
   - id: index
-    kind: sdp_ingest@2
+    kind: sdp_ingest@3
     params:
       source: my-calls                                 # set me: a registered source
       path: mount://corpora/my-calls/set-me-revision   # set me: <mount>/<source>/<revision>

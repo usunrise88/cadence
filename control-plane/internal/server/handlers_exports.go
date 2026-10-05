@@ -37,7 +37,11 @@ func apiExport(x exports.Export) api.DatasetExport {
 		State: api.DatasetExportState(x.State), PipelineRunId: optional(x.PipelineRunID), StepKind: optional(x.StepKind),
 		Artifact: optional(x.Artifact), Files: x.Files, Bytes: x.Bytes, Copies: x.Copies, Error: optional(x.Error),
 		CreatedBy: apiActor(x.CreatedBy), ApprovalId: optional(x.ApprovalID), CreatedAt: x.CreatedAt, FinishedAt: x.FinishedAt,
-		Rev: x.Rev}
+		Rev: x.Rev, JobId: optional(x.JobID), Commit: optional(x.Commit)}
+	if x.Format == exports.FormatProject {
+		n := x.Versions
+		out.Versions = &n
+	}
 	sample := make([]api.DatasetExportFile, 0, len(x.Sample))
 	for _, f := range x.Sample {
 		sample = append(sample, api.DatasetExportFile{Path: f.Path, Hash: optional(f.Hash), Bytes: f.Bytes})

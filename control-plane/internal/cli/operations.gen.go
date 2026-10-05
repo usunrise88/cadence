@@ -506,6 +506,21 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "bundles.adopt", Entity: "bundles", Verb: "adopt", Method: "POST", Path: "/projects/{p}/bundles:adopt",
+		Summary:        "Import a Cadence project bundle's registry versions this instance lacks and adopt every version the bundle's project adopted into this project (approval for everyone); 201 with the import job",
+		Description:    "Read a Cadence project bundle (projects.export on this or another instance) from a directory on a mount (bundle: mount://<mount>/<dir>, the directory holding bundle.json) and adopt the versions its project adopted into this project. Versions this instance already holds (same collection and content) are reused; the rest are registered under their original version strings — their blobs copied into the content store and checked against their hashes, dataset versions and noise banks re-imported from their dataset bundles with their sources and licences (a source cleared for training there is cleared here), golden sets re-frozen through this instance's leakage checks. Adoption runs the licence checks (and the golden-set leakage check against what this project trained on); aliases the bundle sets are set where this project has no alias of that name (production never). The repository is not changed (projects.new with bundle makes a new project from it). Registering versions is a registry change for every project, so the call is an approval the admin decides, for people too (202 with an approvalId); the approved call answers 201 with the import job (follow job.{jobId}; its result lists what was registered, reused and adopted). dryRun=true answers the plan without asking. Needs If-Match with the project's revision.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "aliases", Type: "boolean", Description: "Set the bundle's aliases this project does not have yet (production never)"},
+			{Name: "bundle", Required: true, Type: "string", Description: "The bundle's directory on a mount: mount://<mount>/<dir> (the directory holding bundle.json)"},
+		}},
+	},
+	{
 		ID: "checkpoints.average", Entity: "checkpoints", Verb: "average", Method: "POST", Path: "/runs/{id}/checkpoints:average",
 		Summary:        "Average chosen checkpoints of a run with the family's average step; the result is a new checkpoint of the run",
 		Description:    "Average two or more checkpoints of one run (ids from checkpoints.list, typically the top k) with the model family's average step. Answers 201 with the pipeline run; when it finishes the averaged checkpoint appears in checkpoints.list (kind averaged, averagedFrom) with its own validation WER when the step measures one.",
@@ -631,7 +646,7 @@ var Operations = []Operation{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
-			{Name: "format", Required: true, Type: "string", Description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval)"},
+			{Name: "format", Required: true, Type: "string", Description: "lhotse-shar: Shar shards (cuts and recording tars); nemo-manifest: manifest.<split>.jsonl with the WAV files; cadence-bundle: the registry record, sources and blobs laid out as a content store, for another Cadence instance; hf-hub: an audiofolder dataset pushed to the Hugging Face Hub (approval); cadence-project-bundle: a whole project (projects.export only; datasets.export refuses it)"},
 			{Name: "hubPrivate", Type: "boolean", Description: "hf-hub: create the repository private (default storage.export_hub_private)"},
 			{Name: "hubRepo", Type: "string", Description: "hf-hub: the dataset repository <org>/<name>; created when missing"},
 			{Name: "project", Type: "string", Description: "Slug of the project the export's pipeline run runs in; default the project the version was ingested or imported in"},
@@ -701,6 +716,144 @@ var Operations = []Operation{
 		ID: "defaults.get", Entity: "defaults", Verb: "get", Method: "GET", Path: "/defaults",
 		Summary:     "The versioned defaults (defaults.yaml) every form, budget and estimate starts from",
 		Description: "The defaults every parameter, form, budget and estimate starts from (defaults.yaml): each value with its description, source and safe range. A value written anywhere else that differs is a departure from default.",
+	},
+	{
+		ID: "deploymentTargets.archive", Entity: "deploymentTargets", Verb: "archive", Method: "POST", Path: "/deployment-targets/{id}:archive",
+		Summary:        "Archive a deployment target (soft, the admin's); it takes no new deployments or promotions, its chain stays",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Target id (dtg_…) or name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+	},
+	{
+		ID: "deploymentTargets.edit", Entity: "deploymentTargets", Verb: "edit", Method: "PATCH", Path: "/deployment-targets/{id}",
+		Summary:        "Change a deployment target (registry approval for everyone; a delivery target's chain gets a target-changed record)",
+		Description:    "Ask to change a deployment target: what it serves, its server, endpoint (staging), repositoryPath and slots (delivery), concurrency, card class, boost limits or description. Its name and kind never change. The real call answers 202 with an approvalId, for people too; the approved change bumps the revision and, on a delivery target, appends a signed target-changed record naming the new configuration. Send If-Match.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Target id (dtg_…) or name"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "boost", Type: "object"},
+			{Name: "cardClass", Type: "string", Description: "The production card class; benchmarks on another class are shown as such"},
+			{Name: "concurrency", Type: "integer", Description: "Streams the latency budget must hold at (absent: deploy.target_concurrency)"},
+			{Name: "description", Type: "string"},
+			{Name: "endpoint", Type: "string", Description: "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one"},
+			{Name: "repositoryPath", Type: "string", Description: "Delivery: the absolute path on the production host where the delivery script installs model directories"},
+			{Name: "server", Type: "object"},
+			{Name: "serves", Type: "array of object"},
+			{Name: "slots", Type: "array of string", Description: "The model names the production pipeline calls, one per locale or use"},
+		}},
+	},
+	{
+		ID: "deploymentTargets.get", Entity: "deploymentTargets", Verb: "get", Method: "GET", Path: "/deployment-targets/{id}",
+		Summary: "Get a deployment target with what it serves and its chain head",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Target id (dtg_…) or name"},
+		},
+	},
+	{
+		ID: "deploymentTargets.list", Entity: "deploymentTargets", Verb: "list", Method: "GET", Path: "/deployment-targets",
+		Summary:     "Deployment targets (staging and delivery) with what they serve, their chain head and the instance signing key",
+		Description: "List where models are served. kind staging is the server Cadence reaches (shadow, parity, benchmark run through it); kind delivery is a production server only a person's delivery script reaches (it has no endpoint). Each target lists what it serves (model family, deployable formats, latency profiles: the first is the primary one), its server kind and version, the slots (model names the production pipeline calls), its concurrency and card class, and for a delivery target the head of its promotion record chain. The answer also carries the instance's public signing keys (the current one and retired ones).",
+		Params: []Param{
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "active (default) or all (archived targets too)", Default: "active", Enum: []string{"active", "all"}},
+		},
+	},
+	{
+		ID: "deploymentTargets.new", Entity: "deploymentTargets", Verb: "new", Method: "POST", Path: "/deployment-targets",
+		Summary:        "Ask for a new deployment target (registry approval for everyone, the admin decides)",
+		Description:    "Ask for a new deployment target. A target names production, so the real call always answers 202 with an approvalId, for people too; the admin decides it, and the approved request creates the target. A delivery target gets the first record of its promotion chain (genesis, signed with the instance key); it never has an endpoint and needs repositoryPath and at least one slot. A staging target needs an endpoint. dryRun=true validates and answers the target as it would be created.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "boost", Type: "object"},
+			{Name: "cardClass", Type: "string", Description: "The production card class; benchmarks on another class are shown as such"},
+			{Name: "concurrency", Type: "integer", Description: "Streams the latency budget must hold at (absent: deploy.target_concurrency)"},
+			{Name: "description", Type: "string"},
+			{Name: "endpoint", Type: "string", Description: "Staging only: the server's HTTP endpoint Cadence reaches; a delivery target never has one"},
+			{Name: "kind", Required: true, Type: "string", Description: "staging: Cadence reaches it; delivery: only a person's delivery script does"},
+			{Name: "name", Required: true, Type: "string", Description: "Lower-case letters, digits and dashes; never changes"},
+			{Name: "repositoryPath", Type: "string", Description: "Delivery: the absolute path on the production host where the delivery script installs model directories"},
+			{Name: "server", Required: true, Type: "object"},
+			{Name: "serves", Type: "array of object"},
+			{Name: "slots", Type: "array of string", Description: "The model names the production pipeline calls, one per locale or use"},
+		}},
+	},
+	{
+		ID: "deployments.get", Entity: "deployments", Verb: "get", Method: "GET", Path: "/deployments/{id}",
+		Summary:     "A deployment with its shadow progress, stage history and pending promotion",
+		Description: "One deployment: what it serves, where, its stage and state, the shadow progress (hours, calls, nights, divergence with its interval, the comparison model, the last replay), the pending promotion when one waits for its receipt, and the stage history (created, promotion, rollback, confirmation, withdrawal) with the promotion record of each step. shadowReplays.list has the nights.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Deployment id (dep_…)"},
+		},
+	},
+	{
+		ID: "deployments.list", Entity: "deployments", Verb: "list", Method: "GET", Path: "/projects/{p}/deployments",
+		Summary:     "The project's deployments, newest first, with stage, shadow progress and pending promotions",
+		Description: "List the project's deployments (dep_…), newest first: the model version and export they serve, where (the staging target for a shadow, a delivery target's slot for canary and production), the stage (shadow, canary, production, retired) and state (active, pending-delivery while a promotion waits for its receipt, rolled-back, retired), the shadow progress (hours replayed against deploy.shadow_min_hours, nights, divergence from the comparison model with its interval) and the stage history with its promotion records. Filter by model version (ver_…, @alias or model/<name>), stage or state=all (retired and rolled back too).",
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "version", In: "query", Flag: "version", Type: "string", Description: "Only deployments of this model version (ver_…, @alias or model/<name>)"},
+			{Name: "stage", In: "query", Flag: "stage", Type: "string", Description: "Only deployments at this stage", Enum: []string{"shadow", "canary", "production", "retired"}},
+			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "live (default: active and pending-delivery) or all", Default: "live", Enum: []string{"live", "all"}},
+		},
+	},
+	{
+		ID: "deployments.new", Entity: "deployments", Verb: "new", Method: "POST", Path: "/projects/{p}/deployments",
+		Summary:        "Deploy a model version's export as a shadow on the staging target, replayed nightly from a calls mount",
+		Description:    "Create a shadow deployment: the model version's export (version ver_…, @alias or model/<name>; profile default the primary profile; format default the family's first) on the staging target, with no effect on calls. It needs an exported export the staging target serves (export-missing, target-does-not-serve) and a staging server that is up (serving-unavailable). replay names the calls it replays every night at deploy.shadow_replay_at: a mount, a path under it and the registered source the recordings belong to (no licence, no ingest), optionally their language and channel roles. Each night the newest calls not yet replayed, up to deploy.shadow_replay_max_hours, are decoded by this model and by the comparison model (against; default the project's production deployment's model, else @baseline) through the staging server, and shadow_score@1 records their divergence; a canary needs deploy.shadow_min_hours of replayed calls. Allowed for agents. dryRun=true validates and answers the deployment as it would be created.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "against", Type: "string", Description: "The model the shadow is compared with (ver_…, @alias or model/<name>, or a base model version); default the model of the project's production deployment, else @baseline"},
+			{Name: "format", Type: "string", Description: "The export's format; default the family's first"},
+			{Name: "profile", Type: "string", Description: "The export's latency profile; default the primary profile"},
+			{Name: "replay", Required: true, Type: "object", Description: "The call recordings a shadow deployment replays every night (R32 · е: Эра's recordings mount; calls-synth-sr stands in)"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name>"},
+		}},
+	},
+	{
+		ID: "deployments.promote", Entity: "deployments", Verb: "promote", Method: "POST", Path: "/deployments/{id}:promote",
+		Summary:        "Promote a deployment to canary or production on a delivery target's slot (checks, then an approval, then a signed record and its bundle)",
+		Description:    "Ask to promote a deployment. canary: from shadow to a delivery target's slot (target dtg_… or name, slot) at trafficShare (default deploy.canary_share); it needs the target to serve the family, format and profile and to run the engine's server version and card class (target-does-not-serve), the export's parity passed (parity-failed), a benchmark of the export passed at the target's concurrency (benchmark-missing, latency-budget-exceeded), the shadow at deploy.shadow_min_hours (shadow-volume-short) and no other canary or pending promotion on the slot (conflict). production: the same model version must be the slot's confirmed canary (canary-required). Promoting to the stage the deployment already holds with a new decoding (boost lists) is a config-only promotion: no new model, the bundle ships the decoding configuration. The checks run first; dryRun=true answers every check without asking anyone. The real call always answers 202 with an approvalId, for people too (rule deployments): a person decides it in the confirm modal. The approval appends a signed promotion record and builds its delivery bundle; the deployment waits in pending-delivery until a person runs deliver.sh on the production host and pastes its receipt (promotions.verify).",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Deployment id (dep_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "decoding", Type: "object"},
+			{Name: "reason", Required: true, Type: "string", Description: "Why: it goes into the signed record"},
+			{Name: "slot", Type: "string", Description: "The target's slot; default the deployment's own once it has one"},
+			{Name: "stage", Required: true, Type: "string"},
+			{Name: "target", Type: "string", Description: "The delivery target (dtg_… or name); default the deployment's own once it is on one"},
+			{Name: "trafficShare", Type: "number", Description: "Canary only; default deploy.canary_share"},
+		}},
+	},
+	{
+		ID: "deployments.rollback", Entity: "deployments", Verb: "rollback", Method: "POST", Path: "/deployments/{id}:rollback",
+		Summary:        "Roll a canary or production deployment back to the slot's earlier production version (approval, signed record, small script)",
+		Description:    "Ask to roll a canary or production deployment back: its slot returns to the confirmed earlier production version, which stayed loaded on the production host (rollback-unavailable when the slot has none). Same path as a promotion: dryRun=true answers the check and the version restored; the real call answers 202 with an approvalId, for people too; the approval appends a signed rollback record and builds a small delivery script that routes the slot back; promotions.verify confirms it.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Deployment id (dep_…)"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "reason", Required: true, Type: "string", Description: "Why: it goes into the signed record"},
+		}},
 	},
 	{
 		ID: "drafts.accept", Entity: "drafts", Verb: "accept", Method: "POST", Path: "/drafts/{id}:accept",
@@ -880,6 +1033,21 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "goldenSets.align", Entity: "goldenSets", Verb: "align", Method: "POST", Path: "/projects/{p}/golden-sets:align",
+		Summary:        "Align the reference texts of several golden sets in one pipeline run (word timings for emission delay)",
+		Description:    "Give golden sets word timings for their reference texts (emission delay in evals needs them) in one pipeline run: one aligning step per golden set (its dataset artifact), so the whole batch is one GPU-spend decision. goldenSets lists ver_… ids or collection names (golden-set/<name>, * patterns), default every golden set the project adopted. Sets are skipped, with the reason, when already aligned (goldenSets.get → alignment), when an aligning step on their dataset has not finished, or when the aligner the project adopted (role align) does not cover their language. Call it with dryRun=true first: it answers the sets, the skips and the estimate (golden-set audio hours × defaults.yaml eval.align_seconds_per_audio_hour), starting nothing. The real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), the plan without one when nothing is left to align, or 202 with an approvalId when the GPU spend needs a person. A step that fails leaves its set unaligned and the others go on.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: false, Properties: []BodyProperty{
+			{Name: "aligner", Type: "string", Description: "The aligner auxiliary (auxiliary/<name>, ver_… or @alias) the project adopted with the align role; absent: the aligning step kind's default"},
+			{Name: "goldenSets", Type: "array of string", Description: "ver_… ids, @aliases or collection names (golden-set/<name>, * patterns) of golden sets the project adopted; absent: every golden set the project adopted"},
+			{Name: "priority", Type: "integer"},
+		}},
+	},
+	{
 		ID: "goldenSets.freeze", Entity: "goldenSets", Verb: "freeze", Method: "POST", Path: "/registry/golden-sets:freeze",
 		Summary:        "Freeze an eval-only dataset version and a scoring normalizer into a golden set (always waits for the admin's approval)",
 		Description:    "Freeze a golden set from a frozen dataset version registered eval-only (datasets.get shows dataset.evalOnly: true) and a scoring normalizer version (normalizers.list; default defaults.yaml eval.normalizer). The dataset's utterances must not overlap any trainable dataset version by utterance or fingerprint, else golden-set-leakage lists the overlapping versions and counts. dryRun=true checks everything and answers the would-be golden set. A real call always answers 202 with an approvalId, for people too: freezing is a registry-scope approval only the admin decides; the approved request registers golden-set/<name> (default: the dataset collection's name). Freezing the same content again answers the version already frozen.",
@@ -909,6 +1077,14 @@ var Operations = []Operation{
 		Params: []Param{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
+		},
+	},
+	{
+		ID: "guidelines.get", Entity: "guidelines", Verb: "get", Method: "GET", Path: "/batches/{id}/guidelines",
+		Summary:     "The annotation guidelines a batch pinned — the Markdown file at the batch's commit of the project repository",
+		Description: "Read the annotation guidelines of an annotation batch as its annotators see them: the file annotation/guidelines/<name>.md at the commit the batch pinned when it was created (R27), not the file on main today. The text is Markdown, at most 256 KiB (truncated says when it was cut). A reviewer invited to the batch reads it; nothing else of the repository is served this way (recipes.get reads the project's files).",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Annotation batch id (anb_…)"},
 		},
 	},
 	{
@@ -1159,6 +1335,42 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "models.benchmark", Entity: "models", Verb: "benchmark", Method: "POST", Path: "/projects/{p}/models:benchmark",
+		Summary:        "Stream audio through the staging server at real-time pace at each concurrency level and judge the latency budget (R31)",
+		Description:    "Measure an export on the staging server: the parity sample's audio streams at real-time pace at each level of streams (default deploy.benchmark_streams, plus the target's concurrency), deploy.benchmark_seconds_per_level each; benchmark_score@1 reports p50/p95/p99 latency per chunk from audio availability, time to final, RTF, and the most streams within the budget (streams per card). The verdict is taken at target's concurrency (a delivery target dtg_… or name; default deploy.target_concurrency): passed when p95 chunk latency ≤ deploy.latency_budget_over_chunk_ms, inconclusive when processes outside Cadence used the card during that level. Every level takes its card alone (job kind benchmark: the card drains for up to deploy.benchmark_drain_max_minutes first; training is never preempted). The export must be exported (export-missing). dryRun=true answers the levels and the estimate; the real call answers the plan with pipelineRun, or 202 with an approvalId. The report lands on models.get exports[].benchmarks.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Type: "string"},
+			{Name: "goldenSet", Type: "string", Description: "Where the streamed audio comes from (the parity sample of this golden set); default the export's parity sample, else the project's first target golden set"},
+			{Name: "priority", Type: "integer"},
+			{Name: "profile", Type: "string", Description: "The export's latency profile; default the target's primary profile, else the primary profile"},
+			{Name: "secondsPerLevel", Type: "number", Description: "default deploy.benchmark_seconds_per_level"},
+			{Name: "streams", Type: "array of integer", Description: "Concurrency levels; default deploy.benchmark_streams (the target's concurrency is always added)"},
+			{Name: "target", Type: "string", Description: "The deployment target (dtg_… or name) whose concurrency the verdict is taken at; default deploy.target_concurrency"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name>"},
+		}},
+	},
+	{
+		ID: "models.export", Entity: "models", Verb: "export", Method: "POST", Path: "/projects/{p}/models:export",
+		Summary:        "Export a model version for serving, one deployable per latency profile (GPU spend)",
+		Description:    "Turn a registered model version (ver_…, @alias or model/<name>) into deployables the staging server and production can load: one per latency profile (default deploy.export_profiles, the primary profile), in the family's export format (default the family's first). Each runs the family's export step (for Nemotron: the fp32 ONNX step graph, a TensorRT engine built on the card, the Triton model directory and the smoke client). A profile already exported (or exporting) is answered as it is and not run again. Call it with dryRun=true first: it answers the profiles, the step and the estimate, starting nothing. The real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), or 202 with an approvalId when the GPU spend needs a person. Then models.parity and models.benchmark; models.get shows exports[].",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Type: "string", Description: "One of the family's export formats; default its first"},
+			{Name: "priority", Type: "integer"},
+			{Name: "profiles", Type: "array of string", Description: "Latency profiles; default deploy.export_profiles (primary = eval.primary_profile)"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name> (its newest version the project adopted)"},
+		}},
+	},
+	{
 		ID: "models.get", Entity: "models", Verb: "get", Method: "GET", Path: "/registry/models/{id}",
 		Summary: "Get a model version with its model card, gate, lineage and the projects that use it",
 		Params: []Param{
@@ -1172,6 +1384,23 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
+	},
+	{
+		ID: "models.parity", Entity: "models", Verb: "parity", Method: "POST", Path: "/projects/{p}/models:parity",
+		Summary:        "Check that an export decodes like the model it came from, through the staging server (R31; GPU spend)",
+		Description:    "Decode the fixed parity sample (the first deploy.parity_sample_utterances utterances by audio hash of a golden set; default the project's first target golden set) twice: with the family's reference decoder at the eval's batch, and through the staging server with the exported engine. parity_score@1 then compares them: passed when |WER difference| ≤ deploy.parity_max_wer_delta (0.1 points), identical token sequences ≥ deploy.parity_min_identical_share and word disagreement ≤ deploy.parity_max_disagreement. The export must be exported (export-missing otherwise; models.export first). dryRun=true answers the sample, the steps and the estimate. The real call answers the plan with pipelineRun, or 202 with an approvalId. The verdict lands on the export (models.get exports[].parity) and is what a canary promotion requires.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Type: "string", Description: "The export's format; default the family's first"},
+			{Name: "goldenSet", Type: "string", Description: "The golden set whose first utterances by audio hash are the sample: ver_…, @alias or golden-set/<name>; default the project's first target golden set"},
+			{Name: "priority", Type: "integer"},
+			{Name: "profile", Type: "string", Description: "The export's latency profile; default the primary profile"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name>"},
+		}},
 	},
 	{
 		ID: "models.register", Entity: "models", Verb: "register", Method: "POST", Path: "/projects/{p}/models:register",
@@ -1476,6 +1705,21 @@ var Operations = []Operation{
 		}},
 	},
 	{
+		ID: "projects.export", Entity: "projects", Verb: "export", Method: "POST", Path: "/projects/{p}:export",
+		Summary:        "Export the project as a Cadence project bundle (its repository at a commit, data.lock and every registry version it references, with their content) to a directory on a writable mount; 201 with the export",
+		Description:    "Write a self-contained Cadence project bundle to a directory on a writable path mount, for another Cadence instance (bundles.adopt, or projects.new with bundle) or for safekeeping: repository.bundle (a git bundle of the repository at ref, default main), data.lock at that commit, bundle.json (the project's facts, its aliases and the registry record of every version it adopted or that an adopted version names — dataset versions, golden sets, normalizers, noise banks, auxiliary models' payloads, models, base models, templates — with their sources and licences), one dataset bundle per dataset version and noise bank under datasets/<name>/<version>/ (the layout datasets.export cadence-bundle writes) and every other blob a payload names under cas/. Versions published by workers (runtimes, step kinds, model families) travel as references only. Every dataset version must be in the cache (datasets.materialize an evicted one first). target defaults to mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>; a directory that already holds a bundle is refused. dryRun=true answers the plan (commit, target, versions, blobs, bytes). The real call answers 201 with the export (exports.get; format cadence-project-bundle, follow job.{jobId}); the audio it writes is recorded as mount copies of its content-store blobs. Needs If-Match with the project's revision (projects.get): the bundle carries the adoptions and aliases of that revision.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "ref", Type: "string", Description: "The branch or commit to export (default main)"},
+			{Name: "target", Type: "string", Description: "A directory on a writable path mount (mount://exports/<path>) that holds no bundle yet; default mount://<storage.export_mount>/projects/<slug>/<commit, 12 hex>"},
+		}},
+	},
+	{
 		ID: "projects.get", Entity: "projects", Verb: "get", Method: "GET", Path: "/projects/{p}",
 		Summary: "Get a project",
 		Params: []Param{
@@ -1492,7 +1736,7 @@ var Operations = []Operation{
 	{
 		ID: "projects.new", Entity: "projects", Verb: "new", Method: "POST", Path: "/projects",
 		Summary:        "Create a project from the wizard's choices and bootstrap its repository (202 with the bootstrap job)",
-		Description:    "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing.",
+		Description:    "Create a project: a unit of work with its own repository, budgets and gates. Only name is required; every other wizard choice (slug, locales, domain, base model, agent driver and model, permission preset, instructions template, repository, budgets) defaults from defaults.yaml (defaults.get, section wizard). The project is created in state bootstrapping and the answer is 202 with the bootstrap job's id: follow job.{jobId} (jobs.wait) until the repository is written and the project is active. A dry run answers 200 with the project that would be created and queues nothing. With bundle (mount://<mount>/<dir>, a project bundle from projects.export) the project is made from the bundle: description, locales, domain and base model default to the bundle's, the internal repository is the bundle's history (main at the bundled commit), and the bootstrap job imports and adopts the bundle's registry versions as bundles.adopt does (the base model becomes the bundle's when it is one of them), then commits project.yaml, AGENTS.md and data.lock for this instance. Registering versions is a registry change, so a call with bundle is an approval the admin decides, for people too (202 with an approvalId instead of a jobId; the approved call answers 202 with the job).",
 		IdempotencyKey: true,
 		Params: []Param{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
@@ -1501,6 +1745,7 @@ var Operations = []Operation{
 			{Name: "agent", Type: "object"},
 			{Name: "baseModel", Type: "string", Description: "A frozen base-model version id (ver_…) or collection name (its newest frozen version)"},
 			{Name: "budgets", Type: "object"},
+			{Name: "bundle", Type: "string", Description: "Make the project from a project bundle (projects.export): mount://<mount>/<dir>, the directory holding bundle.json. Choices sent here override the bundle's facts; the repository must be internal"},
 			{Name: "description", Type: "string"},
 			{Name: "domain", Type: "string"},
 			{Name: "instructionsTemplate", Type: "string", Description: "An instructions template (templates.list templateKind=instructions): default or minimal; custom once AGENTS.md was edited by hand"},
@@ -1544,6 +1789,38 @@ var Operations = []Operation{
 			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
+	},
+	{
+		ID: "promotions.get", Entity: "promotions", Verb: "get", Method: "GET", Path: "/promotions/{id}",
+		Summary:     "A promotion record with its signature, key, state, delivery script and (for people) a signed bundle link",
+		Description: "One promotion record: its canonical body, hash, signature and key id, whether it verifies, its state (a promotion or rollback is pending until a person confirms its receipt, then confirmed, or withdrawn after deploy.delivery_pending_days), and its delivery bundle (state, content-store hash, the text of deliver.sh, the smoke check's size). People also get a short-lived signed link that downloads the bundle; agents never do — delivery is for people.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Promotion record id (prm_…)"},
+		},
+	},
+	{
+		ID: "promotions.list", Entity: "promotions", Verb: "list", Method: "GET", Path: "/deployment-targets/{id}/promotions",
+		Summary:     "A delivery target's promotion record chain, oldest first, every record re-verified on read",
+		Description: "The target's promotion records, oldest first: genesis, promotions, rollbacks, confirmations, withdrawals, target changes and key rotations. Each record is JSON in canonical form (RFC 8785) whose SHA-256 is its hash, signed with the instance's Ed25519 key and chained by prevHash. Every record is verified again on read (verified, with the reasons when not), and intact says whether the whole chain holds. Filter by project (slug or id) and slot; a filtered answer still verifies the whole chain.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Delivery target id (dtg_…) or name"},
+			{Name: "project", In: "query", Flag: "project", Type: "string", Description: "Only records of this project (slug or prj_…)"},
+			{Name: "slot", In: "query", Flag: "slot", Type: "string", Description: "Only records of this slot"},
+		},
+	},
+	{
+		ID: "promotions.verify", Entity: "promotions", Verb: "verify", Method: "POST", Path: "/promotions/{id}:verify",
+		Summary:        "Confirm a delivery with the receipt line deliver.sh printed (people only); appends a signed confirmation record",
+		Description:    "People only (rule delivery-is-for-people): an agent never confirms a delivery. The person who ran the bundle's deliver.sh on the production host pastes the line it printed, CADENCE-RECEIPT 1 <recordHash> <servedSha256> <ok>/<total> <host> <UTC time>. Cadence accepts it when the record is the slot's pending one, the record hash matches, the served files hash to the record's manifestSha256 and the smoke check passed; it then appends a signed confirmation record naming the person and moves the deployment to its stage. Anything else answers promotion-receipt-mismatch and changes nothing. Send If-Match with the record's ETag.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Promotion record id (prm_…) of a promotion or rollback"},
+			{Name: "If-Match", In: "header", Flag: "if-match", Required: true, Type: "string", Description: "The revision the change is based on (the ETag of the last read); a mismatch answers 412 with currentRev"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "receipt", Required: true, Type: "string", Description: "The CADENCE-RECEIPT line deliver.sh printed (surrounding text is ignored)"},
+		}},
 	},
 	{
 		ID: "queueEntries.list", Entity: "queueEntries", Verb: "list", Method: "GET", Path: "/queue-entries",
@@ -1754,11 +2031,38 @@ var Operations = []Operation{
 			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
 		},
 		Body: &Body{Required: true, Properties: []BodyProperty{
-			{Name: "kind", Required: true, Type: "string"},
+			{Name: "kind", Required: true, Type: "string", Description: "signing: the instance's Ed25519 promotion key (generated by Cadence, never stored through secrets.new)"},
 			{Name: "name", Required: true, Type: "string"},
 			{Name: "scope", Type: "string", Description: "instance, or project:<slug> when only that project's jobs and bootstrap may read it"},
 			{Name: "value", Required: true, Type: "string", Description: "Write-only; stored encrypted outside the database"},
 		}},
+	},
+	{
+		ID: "shadowReplays.get", Entity: "shadowReplays", Verb: "get", Method: "GET", Path: "/shadow-replays/{id}",
+		Summary:     "One night's shadow replay with its most divergent segments (texts kept deploy.shadow_artifact_retention_days)",
+		Description: "One night of a shadow replay with its most divergent segments (up to deploy.shadow_worst_segments): the segment's audio hash and mount window, its call, both transcripts, their confidences and the WER of one against the other. The texts come from production audio: they are kept deploy.shadow_artifact_retention_days (textsEvictedAt once gone; the night's summary stays) and never reach an LLM judge before PII redaction.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Shadow replay id (srp_…)"},
+		},
+	},
+	{
+		ID: "shadowReplays.list", Entity: "shadowReplays", Verb: "list", Method: "GET", Path: "/deployments/{id}/shadow-replays",
+		Summary:     "A shadow deployment's nightly replays, newest first, with the divergence of each night",
+		Description: "The nights a shadow deployment replayed (srp_…), newest first: state (running, done, failed, skipped with the reason), calls, hours, segments, the divergence between this model and the comparison model (WER of one against the other, with a bootstrap interval resampled by call) and both mean confidences. shadowReplays.get adds the night's most divergent segments.",
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Deployment id (dep_…)"},
+			{Name: "limit", In: "query", Flag: "limit", Type: "integer", Description: "Nights to answer (default 60)", Default: "60"},
+		},
+	},
+	{
+		ID: "shadowReplays.new", Entity: "shadowReplays", Verb: "new", Method: "POST", Path: "/deployments/{id}/shadow-replays",
+		Summary:        "Replay the newest unreplayed calls of a shadow deployment now, instead of waiting for the night (GPU spend)",
+		Description:    "Start a shadow replay now: the newest calls of the deployment's replay mount not yet replayed, up to deploy.shadow_replay_max_hours, decoded by the deployment's export and by the comparison model through the staging server, then shadow_score@1. The nightly replay at deploy.shadow_replay_at does the same by itself; one replay runs at a time per deployment (conflict). dryRun=true answers the calls it would take and the estimate; the real call answers 201 with the replay, or 202 with an approvalId when the GPU spend needs a person.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "id", In: "path", Flag: "id", Required: true, Type: "string", Description: "Deployment id (dep_…)"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
 	},
 	{
 		ID: "sources.archive", Entity: "sources", Verb: "archive", Method: "POST", Path: "/registry/sources/{id}:archive",
@@ -1896,6 +2200,14 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 			{Name: "templateKind", In: "query", Flag: "template-kind", Type: "string", Description: "Only templates of this kind", Enum: []string{"instructions", "preset", "skill", "pipeline", "agent-config", "playbook", "langpack", "annotation"}},
+		},
+	},
+	{
+		ID: "texts.get", Entity: "texts", Verb: "get", Method: "GET", Path: "/registry/texts/{hash}",
+		Summary:     "Read a text of the content store the registry names to be read — a dataset version's card (Markdown)",
+		Description: "Read a text file of the content store that a registry version names as text meant to be read: today the dataset card (Markdown) of a dataset version, by the hash datasets.get gives as dataset.card.hash. Any other hash answers not-found, whatever the blob holds — audio, manifests and shards are read by steps, not served as text. Registry read; at most 256 KiB (truncated says when it was cut).",
+		Params: []Param{
+			{Name: "hash", In: "path", Flag: "hash", Required: true, Type: "string", Description: "Artifact hash (b3:<64 hex>, BLAKE3-256 of the content)"},
 		},
 	},
 	{

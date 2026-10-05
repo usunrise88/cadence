@@ -12,6 +12,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/commands"
 	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
+	"github.com/usunrise88/cadence/control-plane/internal/modelexports"
 	"github.com/usunrise88/cadence/control-plane/internal/pipelines"
 	"github.com/usunrise88/cadence/control-plane/internal/problems"
 	"github.com/usunrise88/cadence/control-plane/internal/projects"
@@ -405,5 +406,15 @@ func (s *Server) ModelsGet(ctx context.Context, req api.ModelsGetRequestObject) 
 	if err != nil {
 		return nil, err
 	}
+	// Phase 5: the deployables of the version, with their parity and benchmarks.
+	views, err := modelexports.Views(ctx, s.Pool, v.Id)
+	if err != nil {
+		return nil, err
+	}
+	exports, err := convert[[]api.ModelExport](views)
+	if err != nil {
+		return nil, err
+	}
+	v.Exports = &exports
 	return api.ModelsGet200JSONResponse(v), nil
 }

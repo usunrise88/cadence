@@ -49,7 +49,7 @@ const TagMined = "mined"
 // importNoise registers a noise-bank version (collection noise-bank/<name>) from a dataset artifact whose purpose is
 // noise: the source with its licence, then a frozen version fingerprinted like a dataset's content. Re-importing the
 // same clips into the same collection returns the version already there.
-func importNoise(ctx context.Context, tx pgx.Tx, a Artifact, src Source, out steps.Output, actor auth.Actor, now time.Time) (registry.Version, []events.Draft, error) {
+func importNoise(ctx context.Context, tx pgx.Tx, a Artifact, src Source, out steps.Output, actor auth.Actor, now, on time.Time) (registry.Version, []events.Draft, error) {
 	h := a.Header
 	p := noisePayload{Source: h.Source.URL, SourceIDs: []string{src.ID}, Licence: src.Licence, Tags: append([]string{}, h.Tags...),
 		Artifact: steps.ArtifactRef{Hash: a.Hash, Type: ArtifactType, Size: out.Artifact.Size},
@@ -92,7 +92,7 @@ func importNoise(ctx context.Context, tx pgx.Tx, a Artifact, src Source, out ste
 	name := strings.TrimPrefix(collectionName(out, h), "noise-bank/")
 	v, _, drafts, err := registry.Register(ctx, tx, registry.RegisterInput{
 		Kind: registry.KindNoiseBank, Name: "noise-bank/" + name, Description: desc, Tags: tags, Licence: src.Licence,
-		Payload: body, Actor: actor, Freeze: true, Fingerprint: ContentFingerprint(a.Lines),
+		Payload: body, Actor: actor, Freeze: true, Fingerprint: ContentFingerprint(a.Lines), On: on,
 	}, now)
 	if err != nil {
 		return registry.Version{}, nil, fmt.Errorf("register noise bank version: %w", err)
