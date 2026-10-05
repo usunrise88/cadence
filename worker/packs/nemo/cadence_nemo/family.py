@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cadence_nemo import deploy
 from cadence_worker.protocol_gen import LatencyProfile
 from cadence_worker.registry import Family
 
@@ -82,7 +83,11 @@ FAMILY = Family(
             "transcribe": "nemotron_transcribe",
             "materialize": "checkpoint_from_base",
             "live": "nemotron_live",
+            # Phase 5 (stream D1): the deployable and the parity reference; serve is nemotron_serve (stream D2).
+            "export": "nemotron_export",
+            "parity": "nemotron_parity",
         },
+        "exportFormats": [{"format": deploy.FORMAT, "server": deploy.SERVER_KIND, "default": True}],
         # A live session's card memory (R49, spike A5 finding 6): one model loaded is 3.7 GB steady with a 5.6 GB
         # load peak (the state dict and the model on the card together), plus margin; every further distinct model
         # adds its fp32 weights; targets of one model share them.
