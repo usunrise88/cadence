@@ -548,6 +548,46 @@ once, by its duration, toward the deployment's `shadow.hours`. A calls mount wit
 serving drift. The texts are derived from production audio: they live under the captured-sample retention class (R28,
 `deploy.shadow_artifact_retention_days`, 90) and never reach an LLM judge before PII redaction (R29).
 
+As built (stream D4, 2026-10-05; `internal/deployments`):
+
+- **The night's calls are picked by the control plane**: it lists the replay path through the mount's reader (the
+  stamp of a path mount is the file's modification time), leaves out the calls the deployment already replayed
+  (`shadow_calls`, keyed by the call's `mount://` URI), sorts the rest newest first and takes them until
+  `deploy.shadow_replay_max_hours` (a call's length from its WAV header, else its size at 16 kB/s, telephone G.711
+  stereo; a long call that would overrun the budget by more than 5 % waits). `sdp_ingest@3` gained `files` (the
+  picked paths under `path`, read in that order; `pattern` is ignored then), so the step reads exactly them; every
+  bundled pipeline pins `sdp_ingest@3` now (a project repository that pins `@2` needs its pin bumped: a worker
+  publishes one version of a kind).
+- The pipeline (`shadow-replay`, generated per night, `RunID` `srp_…`, fresh): `index` `sdp_ingest` (`channels:
+  split`, the replay's `channel_roles`, `language`, `exclude: []`, `max_hours` a tenth over the picked hours) →
+  `audio` `segments_cut` (`which: unlabelled`: the callers' segments; the bot's carry its TTS script) → `candidate`
+  the family's `serve` role (the deployment's export, `deploy.shadow_concurrency` streams, pace `fast`, job kind
+  `shadow`) ‖ `current` → `score` `shadow_score@1` (`segments` from `index`, `candidate` and `current`
+  hypotheses).
+- **The comparison model** is decoded through the same staging server when it is a model version with an exported
+  export at the deployment's profile and format that the staging target serves; otherwise (a base model, or a model
+  version never exported) by the family's `transcribe` role on its weights (after `materialize` for a base model), as
+  job kind `shadow`. The night records which (`against.decodedBy`: `serve` | `transcribe`).
+- `shadow_score@1` (neutral, CPU; params `worst_segments` = `deploy.shadow_worst_segments` (50), `bootstrap_samples`,
+  `confidence`, `seed` from `eval.*`, `normalize: basic|none`) writes `shadow_report` (`cadence.shadow/1`):
+  `report.json` `{calls, hours, utterances, missing, divergence: {wer, ci, level, samples, words, errors},
+  confidence: {candidate, current}, callList: [{call, duration, segments, wer}], worst: [{audio, uri, call, start,
+  end, duration, wer, errors, words, candidate, current, …Confidence}]}` and `segments.jsonl` (every compared
+  segment). The divergence is the WER of the candidate against the comparison model's transcript after basic
+  normalisation (NFC, case-folded, punctuation stripped), the interval resampled by call (R54).
+- The `shadow_report` hook records the night (`shadow_replays`: calls, hours, segments, divergence, both mean
+  confidences, the worst segments with both texts), each call once (`shadow_calls`) and the worst segments' audio
+  (`shadow_segments`: `audio.get` plays a `b3:` hash of one while its night's texts are kept), updates the
+  deployment's `shadow` totals and emits `shadow.replayed`. A run that ends without a report fails the night.
+- **Schedule**: a periodic job every minute starts the night's replay of every live shadow deployment with a replay
+  once `deploy.shadow_replay_at` has passed in `policies.timezone`, as the system actor (no policy decision: creating
+  the shadow deployment was the allowed action). A night that cannot run (no calls not replayed yet, the mount or the
+  staging server down, a replay still running) is recorded `skipped` with the reason, once a night.
+  `shadowReplays.new` replays now under the usual `gpu-spend` policy; one replay runs at a time per deployment.
+- **Retention**: a daily job clears nights older than `deploy.shadow_artifact_retention_days`: the worst segments
+  in the row, the `shadow_segments` rows and — through the eviction job, permanently — every artifact the night's
+  pipeline run wrote (the cut audio, both transcripts, the report). The summary stays (`textsEvictedAt`).
+
 **Defaults.** Stream D1 adds `deploy`, stream D2 `serving` to `defaults.yaml` (bump `version`). Every entry has a
 description, a source and a range, as in the file:
 
@@ -571,6 +611,8 @@ deploy:
   shadow_replay_at: { value: "02:00", description: Local time (policies.timezone) the nightly shadow replay starts, source: Cadence recommendation }
   shadow_replay_max_hours: { value: 4, unit: h, range: { min: 0.5, max: 24 }, description: Most call audio one night's replay takes per shadow deployment, source: "Cadence recommendation; E1: RTF 0.18 per stream at 32 streams, so 4 h replay in minutes" }
   shadow_artifact_retention_days: { value: 90, unit: days, range: { min: 1, max: 3650 }, description: Days a night's shadow texts are kept (production-derived; the summary stays), source: "R28 · confirm (captured-sample class)" }
+  shadow_concurrency: { value: 32, unit: streams, range: { min: 1, max: 256 }, description: Streams each serve step of a night's replay decodes at once (pace fast), source: "Cadence recommendation; E1: RTF 0.18 per stream at 32 streams" }   # stream D4
+  shadow_worst_segments: { value: 50, unit: segments, range: { min: 0, max: 1000 }, description: The most divergent segments a night's shadow report lists, source: Cadence recommendation }   # stream D4
   canary_share: { value: 0.05, unit: fraction, range: { min: 0.01, max: 0.5 }, description: Traffic share a canary promotion asks for when the request names none, source: Cadence recommendation }
   delivery_pending_days: { value: 7, unit: days, range: { min: 1, max: 60 }, description: A promotion without a receipt is withdrawn after this long, source: Cadence recommendation }
   triton_cuda_pool_mb: { value: 4096, unit: MB, range: { min: 256, max: 16384 }, description: "The Triton server's CUDA pool (every live stream's state, 12.6 MB per stream at fp32 and 80 ms); compose passes it to the staging server", source: "spike E1 (256 streams fit a 4 GB pool; 256 MB capped the server at about 64)" }   # stream D2
