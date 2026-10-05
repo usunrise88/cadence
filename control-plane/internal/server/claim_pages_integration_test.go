@@ -10,7 +10,7 @@ func TestClaimLooksPastJobsThatDoNotFit(t *testing.T) {
 	w := startWorkers(t)
 	f := w.register(w.workerToken("staging"), "toy", map[string]any{"train_toy": kind("1", "training", true, false)})
 	big := gpuSpec("train_toy")
-	big.Priority, big.Resources.MemoryGB = 10, 100 // over the card's 22 GB cap
+	big.Priority, big.Resources.MemoryGB = 10, 100 // over the card's 29 GB cap
 	for range 55 {
 		w.enqueue(big)
 	}

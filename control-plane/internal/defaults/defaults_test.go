@@ -36,11 +36,12 @@ func TestEmbeddedDefaultsParse(t *testing.T) {
 		}
 	}
 	if len(d.Compute.Hosts) != 1 || d.Compute.Hosts[0].Name != "staging" || len(d.Compute.Hosts[0].Cards) != 1 ||
-		d.Compute.Hosts[0].Cards[0].MemoryCapGB != 22 {
-		t.Errorf("compute hosts = %+v, want staging with one card capped at 22 GB", d.Compute.Hosts)
+		d.Compute.Hosts[0].Cards[0].MemoryCapGB != 29 || d.Compute.Hosts[0].Cards[0].ServingReserveGB != 9 {
+		t.Errorf("compute hosts = %+v, want staging with one card capped at 29 GB, 9 of them the serving reserve", d.Compute.Hosts)
 	}
 	card := d.Compute.Hosts[0].Cards[0]
-	if _, ok := d.TrainingEstimate(d.Wizard.BaseModel.Value, card.CardClass, card.MemoryCapGB, d.Training.Precision.Value); !ok {
+	// Estimates are keyed by the training share of the cap (compute.Card.TrainingCapGB).
+	if _, ok := d.TrainingEstimate(d.Wizard.BaseModel.Value, card.CardClass, card.MemoryCapGB-card.ServingReserveGB, d.Training.Precision.Value); !ok {
 		t.Error("the estimate table has no row for the default base model on the seeded card")
 	}
 }

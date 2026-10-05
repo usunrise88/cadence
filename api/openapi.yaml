@@ -5783,6 +5783,7 @@ components:
         memoryGb: { type: number, format: double }
         memoryCapGb: { type: number, format: double, description: "The memory a Cadence job may use on this card (CADENCE_GPU_MEMORY_CAP_GB)" }
         allowedJobKinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
+        servingReserveGb: { type: number, format: double, description: "Phase 5 (R30): the share of memoryCapGb a training step's whole-cap reservation leaves alone, for served models, shadow replay and live sessions (0: none)" }
         windows: { $ref: "#/components/schemas/AvailabilityWindows" }
         telemetry: { $ref: "#/components/schemas/CardTelemetryReport" }
     ComputeHealth:
@@ -5816,9 +5817,10 @@ components:
       properties:
         index: { type: integer, minimum: 0 }
         name: { type: string, minLength: 1, maxLength: 200 }
-        cardClass: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$", description: "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)" }
+        cardClass: { type: string, pattern: "^[a-z0-9][a-z0-9-]{0,62}$", description: "Key into the estimate table in defaults.yaml (a corrected card: blackwell-96gb)" }
         memoryGb: { type: number, format: double, exclusiveMinimum: 0, description: "The card's memory; the cap must stay at or below it" }
         memoryCapGb: { type: number, format: double, exclusiveMinimum: 0 }
+        servingReserveGb: { type: number, format: double, minimum: 0, description: "The share of the cap kept for served models, shadow replay and live sessions; at most the cap (R30)" }
         allowedJobKinds: { type: array, uniqueItems: true, items: { $ref: "#/components/schemas/JobKind" } }
         windows: { $ref: "#/components/schemas/AvailabilityWindows" }
     ComputeEdit:
@@ -5908,6 +5910,7 @@ components:
         card_class: { type: string }
         memory_gb: { type: number, format: double }
         memory_cap_gb: { type: number, format: double }
+        serving_reserve_gb: { type: number, format: double, description: "The share of the cap kept for served models, shadow replay and live sessions (R30)" }
         allowed_job_kinds: { type: array, items: { $ref: "#/components/schemas/JobKind" } }
     DefaultHost:
       type: object
@@ -5951,7 +5954,7 @@ components:
         pseudolabel: { $ref: "#/components/schemas/DefaultSection", description: "Pseudo-labels (phase 4): when the members of a pseudo-label ensemble agree on a segment's text (pairwise WER, agreeing members, language identification)" }
         playbooks: { $ref: "#/components/schemas/DefaultSection", description: "Playbooks (phase 4 · stream B): the values playbook inputs default to (Try Cadence's hours of FLEURS and training steps)" }
         deploy: { $ref: "#/components/schemas/DefaultSection", description: "Deployment (phase 5): parity and latency thresholds, the canary share and how long a promotion waits for its receipt" }
-        serving: { $ref: "#/components/schemas/DefaultSection", description: "Staging serving (phase 5): the staging target seeded at first start" }
+        serving: { $ref: "#/components/schemas/DefaultSection", description: "Staging serving (phase 5): the staging target seeded at first start, the server kinds' health and model-control paths, a served model's memory, its idle unload and the health check" }
         estimates:
           type: object
           required: [bytes_per_audio_hour, training]
@@ -9761,9 +9764,10 @@ components:
     TranscriptionTargetIn:
       type: object
       additionalProperties: false
-      description: "Exactly one of checkpointId, modelVersionId and baseModelVersionId"
+      description: "Exactly one of checkpointId, modelVersionId, baseModelVersionId and deploymentId"
       properties:
         checkpointId: { type: string, maxLength: 100, description: "A checkpoint of the project (ckp_…)" }
+        deploymentId: { type: string, maxLength: 100, description: "Phase 5 (R47): a deployment of the project (dep_…) whose export the staging target serves; the lane decodes through the staging server. A session's targets are all deployments or none" }
         modelVersionId: { type: string, maxLength: 200, description: "A model version (ver_…, model/<name>, or @alias)" }
         baseModelVersionId: { type: string, maxLength: 200, description: "A base model version (ver_…, base-model/<name>, or @alias)" }
         profile: { type: string, maxLength: 40, description: "Latency profile (default: eval.primary_profile when the family declares it, else its first streaming profile)" }
@@ -9794,8 +9798,8 @@ components:
         pace: { type: string, enum: [realtime, fast] }
         blind: { type: boolean }
         family: { type: string, description: "The targets' model family" }
-        liveKind: { type: string, description: "The family's live role step kind (kind@version) that serves the session" }
-        reservationMb: { type: integer, description: "Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model" }
+        liveKind: { type: string, description: "The family's live role step kind (kind@version) that serves the session; for deployment targets its serve role in relay mode" }
+        reservationMb: { type: integer, description: "Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model; for deployment targets the served model's reservation (serving.model_memory_gb unless its deployable states one)" }
         position: { type: integer, description: "Place among the waiting interactive jobs (1 = next)" }
         reason: { type: string, description: "Why the session waits, when it does" }
         limits: { $ref: "#/components/schemas/TranscriptionLimits" }
@@ -9806,8 +9810,8 @@ components:
       required: [target, kind, id, label, family, profile, language, weightsKey]
       properties:
         target: { type: string, enum: [A, B, C], description: "The lane; live messages name it in target" }
-        kind: { type: string, enum: [checkpoint, model, base_model] }
-        id: { type: string, description: "ckp_… or ver_…" }
+        kind: { type: string, enum: [checkpoint, model, base_model, deployment] }
+        id: { type: string, description: "ckp_…, ver_… or dep_…" }
         label: { type: string, description: "What the lane runs (the page hides it until the person picks, when blind)" }
         family: { type: string }
         profile: { type: string }
@@ -11489,6 +11493,29 @@ components:
         estimate: { $ref: "#/components/schemas/PipelineEstimate" }
         warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
         pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+    # ---------------------------------------------------------------- staging serving schemas (phase 5 · stream D2) — add below
+    ServingHealth:
+      type: object
+      required: [state]
+      description: "A staging target's server as the control plane's health check found it (every serving.health_check_seconds; 06 'Staging serving'). Delivery targets have none: Cadence never reaches them"
+      properties:
+        state: { type: string, enum: [unknown, up, down], description: "unknown until the first check" }
+        checkedAt: { type: string, format: date-time }
+        since: { type: string, format: date-time, description: When the state last changed }
+        detail: { type: string, description: "Why the server is down (the health call's error or status)" }
+        latencyMs: { type: integer, description: The health call's round trip }
+    ServedModel:
+      type: object
+      required: [model, deployableHash, memoryMb, state, leases]
+      description: "A model the serve steps loaded on a staging target: the control plane counts the leases that use it and unloads it once none has for serving.unload_idle_minutes"
+      properties:
+        model: { type: string, description: "The versioned model name on the server (cadence-<16 hex digits of the deployable's hash>)" }
+        deployableHash: { type: string, description: "The deployable artifact (b3:…)" }
+        memoryMb: { type: integer, description: "Card memory the model reserves (the deployable's serving.memoryMb, else serving.model_memory_gb)" }
+        state: { type: string, enum: [in-use, loaded, unloaded], description: "in-use: a lease uses it; loaded: idle on the server; unloaded: removed by the idle unload, or found gone" }
+        leases: { type: integer, description: Active leases that use the model }
+        lastUsedAt: { type: string, format: date-time, description: When the last lease that used it was granted or ended }
+        unloadedAt: { type: string, format: date-time }
     # ---------------------------------------------------------------- deployment targets, promotion records, delivery schemas (phase 5 · stream D3) — add below
     DeploymentTargetServes:
       type: object
@@ -11570,6 +11597,8 @@ components:
         boost: { $ref: "#/components/schemas/DeploymentTargetBoost" }
         state: { type: string, enum: [active, archived] }
         chain: { $ref: "#/components/schemas/DeploymentTargetChain" }
+        health: { $ref: "#/components/schemas/ServingHealth" }
+        servedModels: { type: array, items: { $ref: "#/components/schemas/ServedModel" }, description: "Staging targets: the models the serve steps loaded, with their lease counts (phase 5 · stream D2)" }
         approvalId: { type: string, description: The approval that created the target }
         rev: { type: integer }
         createdBy: { $ref: "#/components/schemas/Actor" }

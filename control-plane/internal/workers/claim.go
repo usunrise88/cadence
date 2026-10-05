@@ -199,8 +199,8 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 				return nil, nil, err
 			}
 			g.Env = env
-			if s.onGranted != nil {
-				more, err := s.onGranted(ctx, tx, g.ID, cand.jobID, cand.spec)
+			for _, hook := range s.onGranted {
+				more, err := hook(ctx, tx, g.ID, cand.jobID, cand.spec)
 				if err != nil {
 					return nil, nil, fmt.Errorf("lease step job: %w", err)
 				}
@@ -332,8 +332,10 @@ func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []Car
 	if len(out) == 0 {
 		return nil, nil
 	}
-	rows, err := tx.Query(ctx, `SELECT card_index, job_kind, memory_mb FROM leases
-		WHERE host_id = $1 AND state = 'active' AND card_index IS NOT NULL`, host.ID)
+	// A lease that serves models is keyed by the least of their names, as queue.NeedOf keys a waiting one.
+	rows, err := tx.Query(ctx, `SELECT l.card_index, l.job_kind, l.memory_mb,
+			coalesce((SELECT min(sl.model) FROM serving_leases sl WHERE sl.lease_id = l.id), '') FROM leases l
+		WHERE l.host_id = $1 AND l.state = 'active' AND l.card_index IS NOT NULL`, host.ID)
 	if err != nil {
 		return nil, fmt.Errorf("read card leases: %w", err)
 	}
@@ -343,7 +345,7 @@ func lockCards(ctx context.Context, tx pgx.Tx, host compute.Host, reported []Car
 			idx int
 			h   queue.Held
 		)
-		if err := rows.Scan(&idx, &h.JobKind, &h.MemoryMB); err != nil {
+		if err := rows.Scan(&idx, &h.JobKind, &h.MemoryMB, &h.ServedModel); err != nil {
 			return nil, fmt.Errorf("read card leases: %w", err)
 		}
 		for i := range out {
@@ -427,13 +429,14 @@ func envName(name string) string {
 func (s *Service) lease(ctx context.Context, tx pgx.Tx, w Worker, host compute.Host, cand candidate, card *queue.Card, capMB int,
 	now time.Time) (*Grant, []events.Draft, error) {
 	id := "lse_" + uuid.Must(uuid.NewV7()).String()
-	jobKind := queue.NeedOf(cand.spec).JobKind
+	need := queue.NeedOf(cand.spec)
+	jobKind := need.JobKind
 	var cardIndex *int
 	gc := GrantCard{Index: -1}
 	if card != nil {
 		idx := card.Config.Index
 		cardIndex, gc = &idx, GrantCard{Index: idx, MemoryCapMB: capMB}
-		card.Held = append(card.Held, queue.Held{JobKind: jobKind, MemoryMB: capMB})
+		card.Held = append(card.Held, queue.Held{JobKind: jobKind, MemoryMB: capMB, ServedModel: need.ServedModel})
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO leases (id, job_id, worker_id, host_id, card_index, job_kind, memory_mb, created_at, heartbeat_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)`, id, cand.jobID, w.ID, host.ID, cardIndex, jobKind, capMB, now); err != nil {

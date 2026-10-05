@@ -78,7 +78,7 @@ func (s *Server) TranscriptionsNew(ctx context.Context, req api.TranscriptionsNe
 	}
 	for _, t := range b.Targets {
 		in.Targets = append(in.Targets, transcriptions.TargetIn{CheckpointID: deref(t.CheckpointId), ModelVersionID: deref(t.ModelVersionId),
-			BaseModelVersionID: deref(t.BaseModelVersionId), Profile: deref(t.Profile), Language: deref(t.Language), Boost: deref(t.Boost),
+			BaseModelVersionID: deref(t.BaseModelVersionId), DeploymentID: deref(t.DeploymentId), Profile: deref(t.Profile), Language: deref(t.Language), Boost: deref(t.Boost),
 			BoostWeight: t.BoostWeight})
 	}
 	// Manual tests spend the project's manual-test allowance, not its GPU budget: nothing for the policy to weigh.

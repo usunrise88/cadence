@@ -359,7 +359,7 @@ func (s *Service) Create(ctx context.Context, tx pgx.Tx, p Prepared) (View, []ev
 		PipelineRunID: pr.ID, TrainStep: p.TrainStep, Steps: p.Estimate.Steps, Seed: p.Seed, GPUs: p.Estimate.GPUs,
 		Precision: p.Estimate.Precision, Params: p.Params, Estimate: est, Actor: p.In.Actor,
 		Card: Card{ComputeID: p.Estimate.Slot.Host.ID, Host: p.Estimate.Slot.Host.Name, Index: p.Estimate.Slot.Card.Index,
-			CardClass: p.Estimate.Slot.Card.CardClass, MemoryCapGB: p.Estimate.Slot.Card.MemoryCapGB},
+			CardClass: p.Estimate.Slot.Card.CardClass, MemoryCapGB: p.Estimate.Slot.Card.TrainingCapGB()},
 		ExperimentID: p.In.ExperimentID, SweepID: p.In.SweepID,
 	}
 	if p.Checkpoint != nil {
@@ -752,7 +752,7 @@ func (s *Service) PlanCalibration(ctx context.Context, q storage.Querier, in Cal
 	if err != nil {
 		return CalibrationPlan{}, err
 	}
-	cp.Key = Key{BaseModel: base.Name, CardClass: slot.Card.CardClass, MemoryCapGB: slot.Card.MemoryCapGB, Precision: precision}
+	cp.Key = Key{BaseModel: base.Name, CardClass: slot.Card.CardClass, MemoryCapGB: slot.Card.TrainingCapGB(), Precision: precision}
 	mixID, content, rev, err := ResolveMix(ctx, q, in.ProjectID, in.Mix, in.MixRevision)
 	if err != nil {
 		return CalibrationPlan{}, err

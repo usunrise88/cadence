@@ -132,6 +132,10 @@ var (
 	// Promotion records and delivery (phase 5 · stream D3).
 	PromotionReceiptMismatch = Type{"promotion-receipt-mismatch", http.StatusUnprocessableEntity, "Promotion receipt mismatch"}
 	DeliveryLinkInvalid      = Type{"delivery-link-invalid", http.StatusForbidden, "Delivery bundle link invalid or expired"}
+	// Staging serving (phase 5 · stream D2).
+	ServingUnavailable = Type{"serving-unavailable", http.StatusServiceUnavailable, "Staging server unavailable"}
+	ServingOverCap     = Type{"serving-over-cap", http.StatusConflict, "Served model over its memory reservation"}
+	TargetDoesNotServe = Type{"target-does-not-serve", http.StatusUnprocessableEntity, "Target does not serve this model"}
 )
 
 // Types lists every registered type.
@@ -157,6 +161,7 @@ func Types() []Type {
 		ExportNotAllowed, BundleInvalid,
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
 		PromotionReceiptMismatch, DeliveryLinkInvalid,
+		ServingUnavailable, ServingOverCap, TargetDoesNotServe,
 	}
 }
 

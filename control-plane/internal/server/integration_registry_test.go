@@ -410,7 +410,7 @@ func TestComputeAndPolicies(t *testing.T) {
 	}
 	e.ok(e.do("GET", "/api/compute", ""), 200, &hosts)
 	if len(hosts.Items) != 1 || hosts.Items[0].Name != "staging" || len(hosts.Items[0].Cards) != 1 ||
-		hosts.Items[0].Cards[0].MemoryCapGb != 22 || hosts.Items[0].Health.State != "unknown" {
+		hosts.Items[0].Cards[0].MemoryCapGb != 29 || hosts.Items[0].Health.State != "unknown" {
 		t.Fatalf("compute.list: %+v", hosts.Items)
 	}
 	resp := e.ok(e.do("GET", "/api/compute/staging", ""), 200, nil)
@@ -518,7 +518,7 @@ func TestRunEstimate(t *testing.T) {
 		est.DurationSeconds.Value != 2220 || est.DurationSeconds.Low != 1800 || est.DurationSeconds.High != 2640 {
 		t.Fatalf("estimate numbers: %+v", est)
 	}
-	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-48gb" || est.Card.MemoryCapGb != 22 ||
+	if est.Card.Host != "staging" || est.Card.Index != 0 || est.Card.CardClass != "blackwell-96gb" || est.Card.MemoryCapGb != 20 ||
 		est.BaseModel.Name != "base-model/nemotron-3.5-asr-streaming-0.6b" {
 		t.Errorf("estimate card or base model: %+v", est)
 	}
@@ -552,9 +552,9 @@ func TestRunEstimate(t *testing.T) {
 	if est.BaseModel.ID != nemo {
 		t.Errorf("alias resolved to %s", est.BaseModel.ID)
 	}
-	e.ok(e.do("PATCH", "/api/compute/staging", `{"cards":[{"index":0,"memoryCapGb":20}]}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
+	e.ok(e.do("PATCH", "/api/compute/staging", `{"cards":[{"index":0,"memoryCapGb":25}]}`, "Idempotency-Key", e.key(), "If-Match", `"1"`), 200, nil)
 	pr := expectProblem(t, dry(`{}`), 422, "estimate-unavailable")
-	if !strings.Contains(pr.Detail, "20 GB") {
+	if !strings.Contains(pr.Detail, "16 GB") { // the training share: the cap minus the 9 GB serving reserve
 		t.Errorf("detail %q", pr.Detail)
 	}
 	e.ok(e.do("PATCH", "/api/compute/staging", `{"cards":[{"index":0,"allowedJobKinds":["eval"]}]}`, "Idempotency-Key", e.key(), "If-Match", `"2"`), 200, nil)

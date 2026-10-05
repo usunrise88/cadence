@@ -387,6 +387,8 @@ func serve(ctx context.Context, getenv func(string) string) error {
 	jobSvc.AddPeriodic("agentSessions.sweep", 30*time.Second, srv.SweepSessions)
 	jobSvc.AddPeriodic("transcriptions.sweep", 30*time.Second, srv.SweepTranscriptions)
 	jobSvc.AddPeriodic("promotions.withdraw", time.Hour, srv.SweepPromotions) // no receipt after deploy.delivery_pending_days
+	// The staging targets' servers: health, and idle served models unloaded (phase 5 · stream D2).
+	jobSvc.AddPeriodic("serving.check", time.Duration(defaults.Get().Serving.HealthCheckSeconds.Value)*time.Second, srv.CheckServing)
 	jobSvc.AddPeriodic("agentCredentials.sweep", time.Minute, srv.SweepAgentCredentials)
 	if path := getenv("CADENCE_HOST_TOKEN_FILE"); path != "" {
 		issued, err := credentials.EnsureHostTokenFile(ctx, pool, path)
@@ -530,7 +532,11 @@ func seed(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) (int, error
 		log.Info("compute hosts created from defaults.yaml", "hosts", hosts)
 	}
 	st := d.Serving.StagingTarget.Value
-	if created, err := targets.Seed(ctx, pool, st.Name, st.Endpoint, targets.Server{Kind: st.Server.Kind, Version: st.Server.Version}, time.Now()); err != nil {
+	serves := make([]targets.Serves, 0, len(st.Serves))
+	for _, sv := range st.Serves {
+		serves = append(serves, targets.Serves{Family: sv.Family, Formats: sv.Formats, Profiles: sv.Profiles})
+	}
+	if created, err := targets.Seed(ctx, pool, st.Name, st.Endpoint, targets.Server{Kind: st.Server.Kind, Version: st.Server.Version}, time.Now(), serves...); err != nil {
 		return 0, err
 	} else if created {
 		log.Info("staging deployment target created from defaults.yaml", "target", st.Name, "endpoint", st.Endpoint)

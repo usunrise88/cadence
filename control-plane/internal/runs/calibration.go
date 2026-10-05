@@ -248,7 +248,7 @@ func leaseCard(ctx context.Context, q storage.Querier, hash string) (string, flo
 	}
 	for _, c := range h.Cards {
 		if c.Index == index {
-			return c.CardClass, c.MemoryCapGB, true, nil
+			return c.CardClass, c.TrainingCapGB(), true, nil
 		}
 	}
 	return "", 0, true, nil // the card left the host's configuration: no class matches

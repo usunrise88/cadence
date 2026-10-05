@@ -44,6 +44,8 @@ const (
 	JobEval     = "eval"
 	JobExport   = "export"
 	JobData     = "data"
+	// JobShadow is nightly shadow replay (phase 5): throughput work that takes its memory from the serving reserve.
+	JobShadow = "shadow"
 	// JobInteractive is a live transcription session (R49): beside training under the card's cap, never beside a
 	// benchmark, before every other kind in the queue.
 	JobInteractive = "interactive"

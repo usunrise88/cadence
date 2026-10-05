@@ -153,6 +153,9 @@ func (s *Server) DeploymentTargetsList(ctx context.Context, req api.DeploymentTa
 		}
 		out.Items = append(out.Items, at)
 	}
+	if err := s.withServing(ctx, s.Pool, out.Items); err != nil { // staging health and served models (stream D2)
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -241,7 +244,15 @@ func (s *Server) targetWithHead(ctx context.Context, q storage.Querier, t target
 	if h, ok := heads[t.ID]; ok {
 		head = &h
 	}
-	return s.apiTarget(t, head)
+	at, err := s.apiTarget(t, head)
+	if err != nil {
+		return at, err
+	}
+	one := []api.DeploymentTarget{at}
+	if err := s.withServing(ctx, q, one); err != nil { // staging health and served models (stream D2)
+		return at, err
+	}
+	return one[0], nil
 }
 
 // DeploymentTargetsEdit implements deploymentTargets.edit (approval for everyone; a delivery target's chain gets a

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/usunrise88/cadence/control-plane/internal/compute"
+	"github.com/usunrise88/cadence/control-plane/internal/steps"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -35,10 +36,10 @@ func TestFit(t *testing.T) {
 	}{
 		{"training takes the whole cap", card(nil), Need{JobKind: "training"}, now, 24 * 1024, ""},
 		{"declared memory", card(nil), Need{JobKind: "eval", MemoryMB: 4096}, now, 4096, ""},
-		{"second training refused", card(nil, Held{"training", 8192}), Need{JobKind: "training", MemoryMB: 1024}, now, 0, "already runs a training"},
-		{"eval beside a sized training", card(nil, Held{"training", 16384}), Need{JobKind: "eval", MemoryMB: 8192}, now, 8192, ""},
-		{"eval too big beside training", card(nil, Held{"training", 16384}), Need{JobKind: "eval", MemoryMB: 9000}, now, 0, "left under its cap"},
-		{"nothing beside a whole-cap training", card(nil, Held{"training", 24576}), Need{JobKind: "data"}, now, 0, "left under its cap"},
+		{"second training refused", card(nil, Held{JobKind: "training", MemoryMB: 8192}), Need{JobKind: "training", MemoryMB: 1024}, now, 0, "already runs a training"},
+		{"eval beside a sized training", card(nil, Held{JobKind: "training", MemoryMB: 16384}), Need{JobKind: "eval", MemoryMB: 8192}, now, 8192, ""},
+		{"eval too big beside training", card(nil, Held{JobKind: "training", MemoryMB: 16384}), Need{JobKind: "eval", MemoryMB: 9000}, now, 0, "left under its cap"},
+		{"nothing beside a whole-cap training", card(nil, Held{JobKind: "training", MemoryMB: 24576}), Need{JobKind: "data"}, now, 0, "left under its cap"},
 		{"kind not allowed", card(nil), Need{JobKind: "export"}, now, 0, "does not accept export"},
 		{"telemetry says busy", Card{Config: card(nil).Config, FreeMB: ptr(20000)}, Need{JobKind: "training"}, now, 0, "by its telemetry"},
 		{"telemetry slack", Card{Config: card(nil).Config, FreeMB: ptr(24*1024 - 300)}, Need{JobKind: "training"}, now, 24 * 1024, ""},
@@ -48,13 +49,13 @@ func TestFit(t *testing.T) {
 		{"resuming ignores the estimate", card(nights), Need{JobKind: "training", EstimateSeconds: ptr(13 * 3600.0), Resuming: true}, now.Add(10 * time.Hour), 24 * 1024, ""},
 		{"other kinds are always open", card(nights), Need{JobKind: "eval", MemoryMB: 1024}, now, 1024, ""},
 		{"interactive not accepted", card(nil), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "does not accept interactive"},
-		{"interactive beside a sized training", liveCard(Held{"training", 16384}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 6000, ""},
-		{"interactive beside training and an eval", liveCard(Held{"training", 12288}, Held{"eval", 4096}), Need{JobKind: "interactive", MemoryMB: 8600}, now, 0, "left under its cap"},
-		{"interactive waits beside a whole-cap training", liveCard(Held{"training", 24576}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "left under its cap"},
-		{"two interactive sessions share a card", liveCard(Held{"interactive", 6000}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 6000, ""},
-		{"interactive never beside a benchmark", liveCard(Held{"benchmark", 4096}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "runs a benchmark"},
-		{"a benchmark never beside a session", liveCard(Held{"interactive", 6000}), Need{JobKind: "benchmark", MemoryMB: 4096}, now, 0, "holds a live session"},
-		{"training beside a session takes the rest", liveCard(Held{"interactive", 6000}), Need{JobKind: "training"}, now, 24*1024 - 6000, ""},
+		{"interactive beside a sized training", liveCard(Held{JobKind: "training", MemoryMB: 16384}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 6000, ""},
+		{"interactive beside training and an eval", liveCard(Held{JobKind: "training", MemoryMB: 12288}, Held{JobKind: "eval", MemoryMB: 4096}), Need{JobKind: "interactive", MemoryMB: 8600}, now, 0, "left under its cap"},
+		{"interactive waits beside a whole-cap training", liveCard(Held{JobKind: "training", MemoryMB: 24576}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "left under its cap"},
+		{"two interactive sessions share a card", liveCard(Held{JobKind: "interactive", MemoryMB: 6000}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 6000, ""},
+		{"interactive never beside a benchmark", liveCard(Held{JobKind: "benchmark", MemoryMB: 4096}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "runs a benchmark"},
+		{"a benchmark never beside a session", liveCard(Held{JobKind: "interactive", MemoryMB: 6000}), Need{JobKind: "benchmark", MemoryMB: 4096}, now, 0, "holds a live session"},
+		{"training beside a session takes the rest", liveCard(Held{JobKind: "interactive", MemoryMB: 6000}), Need{JobKind: "training"}, now, 24*1024 - 6000, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,6 +64,78 @@ func TestFit(t *testing.T) {
 				t.Fatalf("Fit = %d, %q; want %d, %q", mb, why, tt.wantMB, tt.wantWhy)
 			}
 		})
+	}
+}
+
+// The stand's card (06 "Staging serving"): a 29 GB cap with a 9 GB serving reserve. Training keeps 20 GB, a served
+// model and shadow replay take the reserve, and a second lease of the same served model needs nothing more.
+func TestFitServingReserve(t *testing.T) {
+	now := time.Date(2026, 10, 4, 12, 0, 0, 0, time.UTC)
+	stand := func(held ...Held) Card {
+		return Card{Config: compute.Card{Index: 0, MemoryGB: 96, MemoryCapGB: 29, ServingReserveGB: 9,
+			AllowedJobKinds: []string{"training", "eval", "shadow", "export", "data", "interactive", "benchmark"}}, Held: held}
+	}
+	const gb = 1024
+	served := Held{JobKind: "eval", MemoryMB: 9 * gb, ServedModel: "cadence-0123456789abcdef"}
+	tests := []struct {
+		name    string
+		card    Card
+		need    Need
+		wantMB  int
+		wantWhy string
+	}{
+		{"training leaves the reserve alone", stand(), Need{JobKind: "training"}, 20 * gb, ""},
+		{"an eval fits under the cap minus the reserve", stand(), Need{JobKind: "eval", MemoryMB: 20 * gb}, 20 * gb, ""},
+		{"an eval may not take the reserve", stand(), Need{JobKind: "eval", MemoryMB: 21 * gb}, 0, "left under its cap"},
+		{"a served model beside a whole-cap training", stand(Held{JobKind: "training", MemoryMB: 20 * gb}),
+			Need{JobKind: "eval", MemoryMB: 9 * gb, ServedModel: "cadence-0123456789abcdef"}, 9 * gb, ""},
+		{"a second lease of the model needs nothing more", stand(Held{JobKind: "training", MemoryMB: 20 * gb}, served),
+			Need{JobKind: "shadow", MemoryMB: 9 * gb, ServedModel: "cadence-0123456789abcdef"}, 9 * gb, ""},
+		{"another model does not fit beside it", stand(Held{JobKind: "training", MemoryMB: 20 * gb}, served),
+			Need{JobKind: "shadow", MemoryMB: 9 * gb, ServedModel: "cadence-fedcba9876543210"}, 0, "left under its cap"},
+		{"a live session waits while a model fills the reserve", stand(Held{JobKind: "training", MemoryMB: 20 * gb}, served),
+			Need{JobKind: "interactive", MemoryMB: 6000}, 0, "left under its cap"},
+		{"a live session takes the reserve beside training", stand(Held{JobKind: "training", MemoryMB: 20 * gb}),
+			Need{JobKind: "interactive", MemoryMB: 6000}, 6000, ""},
+		{"serving spills into the rest of the cap when nothing else runs", stand(served),
+			Need{JobKind: "shadow", MemoryMB: 9 * gb, ServedModel: "cadence-fedcba9876543210"}, 9 * gb, ""},
+		{"training after a spill keeps out of it", stand(served, Held{JobKind: "eval", MemoryMB: 9 * gb, ServedModel: "cadence-fedcba9876543210"}),
+			Need{JobKind: "training"}, 11 * gb, ""},
+		{"leases of one model count once", stand(served, served, served), Need{JobKind: "training"}, 20 * gb, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mb, why := Fit(tt.card, tt.need, now)
+			if mb != tt.wantMB || (tt.wantWhy == "" && why != "") || !strings.Contains(why, tt.wantWhy) {
+				t.Fatalf("Fit = %d, %q; want %d, %q", mb, why, tt.wantMB, tt.wantWhy)
+			}
+		})
+	}
+}
+
+func TestNeedOfServedModel(t *testing.T) {
+	hash := "b3:" + strings.Repeat("ab", 32)
+	spec := steps.Spec{Kind: "serve", KindVersion: "1", Params: []byte(`{"target":"staging","concurrency":1}`),
+		Inputs: map[string]steps.ArtifactRef{
+			"data":   {Hash: "b3:" + strings.Repeat("cd", 32), Type: "dataset"},
+			"export": {Hash: hash, Type: steps.TypeDeployable, Meta: []byte(`{"serving":{"memoryMb":7000}}`)},
+		},
+		Resources: steps.Resources{GPU: true, MemoryGB: 9, JobKind: "eval"}}
+	n := NeedOf(spec)
+	if n.ServedModel != "cadence-abababababababab" || n.MemoryMB != 7000 || n.JobKind != "eval" {
+		t.Fatalf("NeedOf = %+v", n)
+	}
+	sv, ok := steps.ServedOf(spec, 0)
+	if !ok || sv.Target != "staging" || sv.DeployableHash != hash {
+		t.Fatalf("ServedOf = %+v %v", sv, ok)
+	}
+	spec.Inputs["export"] = steps.ArtifactRef{Hash: hash, Type: steps.TypeDeployable}
+	if n := NeedOf(spec); n.MemoryMB != 9*1024 {
+		t.Fatalf("without a stated reservation the step's memoryGb counts: %+v", n)
+	}
+	delete(spec.Inputs, "export")
+	if n := NeedOf(spec); n.ServedModel != "" {
+		t.Fatalf("no deployable, no served model: %+v", n)
 	}
 }
 

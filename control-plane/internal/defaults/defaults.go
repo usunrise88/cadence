@@ -117,11 +117,34 @@ type Defaults struct {
 type Deploy struct {
 	ParityMinIdenticalShare Param[float64] `yaml:"parity_min_identical_share"`
 	DeliveryPendingDays     Param[int]     `yaml:"delivery_pending_days"`
+	// TritonCUDAPoolMB is the server's CUDA memory pool (stream D2, spike E1): compose passes it to the staging server.
+	TritonCUDAPoolMB Param[int] `yaml:"triton_cuda_pool_mb"`
 }
 
-// Serving holds the staging serving defaults.
+// Serving holds the staging serving defaults (docs/spec/06-platform.md "Staging serving"; phase 5 · stream D2).
 type Serving struct {
 	StagingTarget Param[StagingTarget] `yaml:"staging_target"`
+	// DefaultTarget is the target a serve step's target parameter names when the pipeline names none.
+	DefaultTarget Param[string] `yaml:"default_target"`
+	// Image is the staging server's image (the compose profile serving); documentation of what compose pins.
+	Image Param[string] `yaml:"image"`
+	// Servers are the HTTP paths of each server kind the control plane calls: health, the model index and unload.
+	// Data, so no Go code names a server's protocol.
+	Servers              Param[map[string]ServerPaths] `yaml:"servers"`
+	ModelMemoryGB        Param[float64]                `yaml:"model_memory_gb"`
+	LoadTimeoutSeconds   Param[int]                    `yaml:"load_timeout_s"`
+	OverCapSlackMB       Param[int]                    `yaml:"over_cap_slack_mb"`
+	UnloadIdleMinutes    Param[int]                    `yaml:"unload_idle_minutes"`
+	HealthCheckSeconds   Param[int]                    `yaml:"health_check_seconds"`
+	HealthTimeoutSeconds Param[int]                    `yaml:"health_timeout_s"`
+}
+
+// ServerPaths are a server kind's HTTP paths relative to a staging target's endpoint; {model} is replaced by the
+// served model's name.
+type ServerPaths struct {
+	Health string `yaml:"health" json:"health"`
+	Index  string `yaml:"index" json:"index"`
+	Unload string `yaml:"unload" json:"unload"`
 }
 
 // StagingTarget is the staging deployment target seeded at first start (internal/targets.Seed).
@@ -132,6 +155,12 @@ type StagingTarget struct {
 		Kind    string `yaml:"kind" json:"kind"`
 		Version string `yaml:"version" json:"version"`
 	} `yaml:"server" json:"server"`
+	// Serves is what the seeded target serves (family, formats, profiles), compared as data (R46).
+	Serves []struct {
+		Family   string   `yaml:"family" json:"family"`
+		Formats  []string `yaml:"formats" json:"formats"`
+		Profiles []string `yaml:"profiles" json:"profiles"`
+	} `yaml:"serves" json:"serves"`
 }
 
 // ModelFor returns the default model of an agent driver.
@@ -419,12 +448,14 @@ type Host struct {
 
 // Card is one card of a seeded host.
 type Card struct {
-	Index           int      `yaml:"index"`
-	Name            string   `yaml:"name"`
-	CardClass       string   `yaml:"card_class"`
-	MemoryGB        float64  `yaml:"memory_gb"`
-	MemoryCapGB     float64  `yaml:"memory_cap_gb"`
-	AllowedJobKinds []string `yaml:"allowed_job_kinds"`
+	Index       int     `yaml:"index"`
+	Name        string  `yaml:"name"`
+	CardClass   string  `yaml:"card_class"`
+	MemoryGB    float64 `yaml:"memory_gb"`
+	MemoryCapGB float64 `yaml:"memory_cap_gb"`
+	// ServingReserveGB is the share of the cap kept for served models, shadow replay and live sessions (R30).
+	ServingReserveGB float64  `yaml:"serving_reserve_gb"`
+	AllowedJobKinds  []string `yaml:"allowed_job_kinds"`
 }
 
 var get = sync.OnceValue(func() *Defaults {
@@ -464,6 +495,9 @@ func Parse(b []byte) (*Defaults, error) {
 		for _, c := range h.Cards {
 			if c.MemoryCapGB <= 0 || c.MemoryCapGB > c.MemoryGB {
 				problems = append(problems, fmt.Sprintf("compute.hosts[%s].cards[%d]: memory_cap_gb must be in (0, memory_gb]", h.Name, c.Index))
+			}
+			if c.ServingReserveGB < 0 || c.ServingReserveGB > c.MemoryCapGB {
+				problems = append(problems, fmt.Sprintf("compute.hosts[%s].cards[%d]: serving_reserve_gb must be in [0, memory_cap_gb]", h.Name, c.Index))
 			}
 		}
 	}

@@ -5,8 +5,8 @@
 // rule deployment-targets); the approved replay runs Create or Edit, whose hooks append a delivery target's genesis
 // and target-changed records (internal/promotions).
 //
-// TODO(D2): the staging target's health check, serving.* beyond staging_target, and served-model lease counting
-// build on this table (stream D2 extends it; the payload and the hooks stay).
+// A staging target's server health, its served models and their lease counts are internal/serving's (phase 5 ·
+// stream D2), keyed by the target id.
 package targets
 
 import (
@@ -490,12 +490,15 @@ func Archive(ctx context.Context, tx pgx.Tx, t Target, now time.Time) (Target, [
 }
 
 // Seed creates the staging target defaults.yaml names (serving.staging_target) when no target of that name exists.
-// It reports whether it created one.
-func Seed(ctx context.Context, pool *pgxpool.Pool, name, endpoint string, server Server, now time.Time) (bool, error) {
+// It reports whether it created one. serves is what the seeded target serves (serving.staging_target.serves).
+func Seed(ctx context.Context, pool *pgxpool.Pool, name, endpoint string, server Server, now time.Time, serves ...Serves) (bool, error) {
 	if name == "" {
 		return false, nil
 	}
-	cfg, err := json.Marshal(Config{Serves: []Serves{}, Server: server, Endpoint: endpoint, Slots: []string{}})
+	if serves == nil {
+		serves = []Serves{}
+	}
+	cfg, err := json.Marshal(Config{Serves: serves, Server: server, Endpoint: endpoint, Slots: []string{}})
 	if err != nil {
 		return false, err
 	}
