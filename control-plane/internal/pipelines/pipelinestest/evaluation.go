@@ -135,7 +135,7 @@ func (l *Leases) runEvaluation(spec steps.Spec) (steps.Outcome, bool, error) {
 			DropWords int `json:"dropWords"`
 		}
 		_ = json.Unmarshal(byType["checkpoint"].Meta, &m)
-		utts, err := readLines[GoldenUtterance](l.CAS, byType["dataset"].Hash)
+		utts, err := datasetUtterances(l.CAS, byType["dataset"].Hash)
 		if err != nil {
 			return steps.Outcome{State: steps.StateFailed, Error: &steps.StepError{Type: steps.ErrInput, Message: err.Error()}}, true, nil
 		}

@@ -52,7 +52,7 @@ Entities:
   metrics        get
   mixes          edit get list new preview
   modelFamilies  get list
-  models         get list register
+  models         benchmark export get list parity register
   mounts         get list new scan verify
   normalizers    get list
   notificationRules edit list

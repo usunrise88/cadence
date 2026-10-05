@@ -3178,7 +3178,8 @@
                           "shadow",
                           "export",
                           "data",
-                          "interactive"
+                          "interactive",
+                          "benchmark"
                         ],
                         "type": "string"
                       },
@@ -7183,6 +7184,202 @@
       ]
     },
     {
+      "name": "models.benchmark",
+      "title": "Stream audio through the staging server at real-time pace at each concurrency level and judge the latency budget (R31)",
+      "description": "Measure an export on the staging server: the parity sample's audio streams at real-time pace at each level of streams (default deploy.benchmark_streams, plus the target's concurrency), deploy.benchmark_seconds_per_level each; benchmark_score@1 reports p50/p95/p99 latency per chunk from audio availability, time to final, RTF, and the most streams within the budget (streams per card). The verdict is taken at target's concurrency (a delivery target dtg_… or name; default deploy.target_concurrency): passed when p95 chunk latency ≤ deploy.latency_budget_over_chunk_ms, inconclusive when processes outside Cadence used the card during that level. Every level takes its card alone (job kind benchmark: the card drains for up to deploy.benchmark_drain_max_minutes first; training is never preempted). The export must be exported (export-missing). dryRun=true answers the levels and the estimate; the real call answers the plan with pipelineRun, or 202 with an approvalId. The report lands on models.get exports[].benchmarks. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/models:benchmark",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "goldenSet": {
+                "description": "Where the streamed audio comes from (the parity sample of this golden set); default the export's parity sample, else the project's first target golden set",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "priority": {
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "profile": {
+                "description": "The export's latency profile; default the target's primary profile, else the primary profile",
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              "secondsPerLevel": {
+                "description": "default deploy.benchmark_seconds_per_level",
+                "maximum": 1800,
+                "minimum": 30,
+                "type": "number"
+              },
+              "streams": {
+                "description": "Concurrency levels; default deploy.benchmark_streams (the target's concurrency is always added)",
+                "items": {
+                  "maximum": 1024,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "target": {
+                "description": "The deployment target (dtg_… or name) whose concurrency the verdict is taken at; default deploy.target_concurrency",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "version": {
+                "description": "The model version: ver_…, @alias or model/\u003cname\u003e",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
+      "name": "models.export",
+      "title": "Export a model version for serving, one deployable per latency profile (GPU spend)",
+      "description": "Turn a registered model version (ver_…, @alias or model/\u003cname\u003e) into deployables the staging server and production can load: one per latency profile (default deploy.export_profiles, the primary profile), in the family's export format (default the family's first). Each runs the family's export step (for Nemotron: the fp32 ONNX step graph, a TensorRT engine built on the card, the Triton model directory and the smoke client). A profile already exported (or exporting) is answered as it is and not run again. Call it with dryRun=true first: it answers the profiles, the step and the estimate, starting nothing. The real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), or 202 with an approvalId when the GPU spend needs a person. Then models.parity and models.benchmark; models.get shows exports[]. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/models:export",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "description": "One of the family's export formats; default its first",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "priority": {
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "profiles": {
+                "description": "Latency profiles; default deploy.export_profiles (primary = eval.primary_profile)",
+                "items": {
+                  "maxLength": 50,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "maxItems": 10,
+                "type": "array",
+                "uniqueItems": true
+              },
+              "version": {
+                "description": "The model version: ver_…, @alias or model/\u003cname\u003e (its newest version the project adopted)",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
+        }
+      ]
+    },
+    {
       "name": "models.get",
       "title": "Get a model version with its model card, gate, lineage and the projects that use it",
       "description": "Get a model version with its model card, gate, lineage and the projects that use it",
@@ -7255,6 +7452,93 @@
           "property": "state",
           "in": "query",
           "name": "state"
+        }
+      ]
+    },
+    {
+      "name": "models.parity",
+      "title": "Check that an export decodes like the model it came from, through the staging server (R31; GPU spend)",
+      "description": "Decode the fixed parity sample (the first deploy.parity_sample_utterances utterances by audio hash of a golden set; default the project's first target golden set) twice: with the family's reference decoder at the eval's batch, and through the staging server with the exported engine. parity_score@1 then compares them: passed when |WER difference| ≤ deploy.parity_max_wer_delta (0.1 points), identical token sequences ≥ deploy.parity_min_identical_share and word disagreement ≤ deploy.parity_max_disagreement. The export must be exported (export-missing otherwise; models.export first). dryRun=true answers the sample, the steps and the estimate. The real call answers the plan with pipelineRun, or 202 with an approvalId. The verdict lands on the export (models.get exports[].parity) and is what a canary promotion requires. Pass dryRun=true to see what would happen without changing anything.",
+      "method": "POST",
+      "path": "/projects/{p}/models:parity",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "body": {
+            "additionalProperties": false,
+            "properties": {
+              "format": {
+                "description": "The export's format; default the family's first",
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              "goldenSet": {
+                "description": "The golden set whose first utterances by audio hash are the sample: ver_…, @alias or golden-set/\u003cname\u003e; default the project's first target golden set",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "priority": {
+                "maximum": 100,
+                "minimum": -100,
+                "type": "integer"
+              },
+              "profile": {
+                "description": "The export's latency profile; default the primary profile",
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              "version": {
+                "description": "The model version: ver_…, @alias or model/\u003cname\u003e",
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "version"
+            ],
+            "type": "object"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Validate and report what would happen without changing anything",
+            "type": "boolean"
+          },
+          "p": {
+            "description": "Project slug",
+            "pattern": "^[a-z][a-z0-9-]{1,38}[a-z0-9]$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "body",
+          "p"
+        ],
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      },
+      "params": [
+        {
+          "property": "p",
+          "in": "path",
+          "name": "p"
+        },
+        {
+          "property": "dryRun",
+          "in": "query",
+          "name": "dryRun"
+        },
+        {
+          "property": "body",
+          "in": "body",
+          "name": "body"
         }
       ]
     },

@@ -193,7 +193,7 @@ tools:
   - id: gpu-spend
     class: spend
     operations: [runs.new, runs.calibrate, runs.resume, runs.stage, checkpoints.average, evals.new, pipelines.run, sweeps.run,
-      goldenSets.align, pipelineRuns.retry, jobs.resume]
+      goldenSets.align, pipelineRuns.retry, jobs.resume, models.export, models.parity, models.benchmark]
     reason: the job spends GPU time
 
   # "Read any entity, log, metric or result" → allowed.

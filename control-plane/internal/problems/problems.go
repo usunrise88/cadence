@@ -132,6 +132,12 @@ var (
 	// Promotion records and delivery (phase 5 · stream D3).
 	PromotionReceiptMismatch = Type{"promotion-receipt-mismatch", http.StatusUnprocessableEntity, "Promotion receipt mismatch"}
 	DeliveryLinkInvalid      = Type{"delivery-link-invalid", http.StatusForbidden, "Delivery bundle link invalid or expired"}
+	// Model exports, parity and benchmarks (phase 5 · stream D1); the last three are what a canary promotion's
+	// checks answer (stream D4).
+	ExportMissing         = Type{"export-missing", http.StatusUnprocessableEntity, "Model export missing"}
+	ParityFailed          = Type{"parity-failed", http.StatusUnprocessableEntity, "Parity check not passed"}
+	LatencyBudgetExceeded = Type{"latency-budget-exceeded", http.StatusUnprocessableEntity, "Latency budget exceeded"}
+	BenchmarkMissing      = Type{"benchmark-missing", http.StatusUnprocessableEntity, "Benchmark missing"}
 )
 
 // Types lists every registered type.
@@ -157,6 +163,7 @@ func Types() []Type {
 		ExportNotAllowed, BundleInvalid,
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
 		PromotionReceiptMismatch, DeliveryLinkInvalid,
+		ExportMissing, ParityFailed, LatencyBudgetExceeded, BenchmarkMissing,
 	}
 }
 

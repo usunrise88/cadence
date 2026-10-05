@@ -705,7 +705,7 @@ export type AliasList = {
     items: Array<Alias>;
 };
 
-export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data' | 'interactive';
+export type JobKind = 'training' | 'eval' | 'shadow' | 'export' | 'data' | 'interactive' | 'benchmark';
 
 export type ComputeCard = {
     /**
@@ -3156,9 +3156,9 @@ export type StepResources = {
     memoryGb?: number;
     diskGb?: number;
     /**
-     * Which compute job kinds may take it (interactive: a live transcription session, R49)
+     * Which compute job kinds may take it (interactive: a live transcription session, R49; a generated pipeline may run a step as another kind: a serve step as eval, shadow or benchmark, phase 5)
      */
-    jobKind?: 'training' | 'eval' | 'export' | 'data' | 'interactive';
+    jobKind?: 'training' | 'eval' | 'export' | 'data' | 'interactive' | 'shadow' | 'benchmark';
 };
 
 export type ModelFamilyDescriptor = {
@@ -3203,6 +3203,14 @@ export type ModelFamilyDescriptor = {
     roles: {
         [key: string]: string;
     };
+    /**
+     * Deployable formats the family's export role writes (phase 5): the format, the server kind it is built for, and which one is the default (data the control plane compares, never branches on)
+     */
+    exportFormats?: Array<{
+        format: string;
+        server?: string;
+        default?: boolean;
+    }>;
     /**
      * The card memory a live transcription session of the family reserves (R49, phase 3 · stream T)
      */
@@ -6066,6 +6074,10 @@ export type ModelRegistration = {
 export type ModelVersion = RegistryVersion & {
     model: ModelPayload;
     usedBy: Array<UsedBy>;
+    /**
+     * Deployables of this version, per latency profile and format, with their parity and benchmarks (phase 5; models.get)
+     */
+    exports?: Array<ModelExport>;
 };
 
 export type ModelVersionList = {
@@ -9520,6 +9532,366 @@ export type GoldenSetAlignPlan = {
      * defaults.yaml eval.align_seconds_per_audio_hour: wall seconds an aligning step spends per audio hour, on a card
      */
     secondsPerAudioHour: number;
+    estimate: PipelineEstimate;
+    warnings: Array<PipelineWarning>;
+    pipelineRun?: PipelineRun;
+};
+
+/**
+ * What deployable.json (cadence.deployable/1) says about serving the export, as data: the server, the engine and its precision, the memory and streams it was sized for
+ */
+export type ModelExportDeployable = {
+    format?: string;
+    /**
+     * {kind, version, minVersion}: the server the model directory is built for
+     */
+    server?: {
+        [key: string]: unknown;
+    };
+    /**
+     * {kind, version, precision, tf32, cardClass, gpu, computeCapability}: an engine is specific to the card class and the engine version it was built with
+     */
+    engine?: {
+        [key: string]: unknown;
+    };
+    modelDir?: string;
+    /**
+     * Card memory the served model reserves (engine
+     */
+    memoryMb?: number;
+    /**
+     * The server's CUDA memory pool the implicit state of maxStreams streams needs
+     */
+    cudaMemoryPoolMb?: number;
+    maxStreams?: number;
+    chunkMs?: number;
+    precision?: string;
+    /**
+     * SHA-256 of the model directory's sorted (sha256, path) lines; the delivery receipt's servedSha256 must equal it
+     */
+    manifestSha256?: string;
+};
+
+/**
+ * The newest parity check of an export (R31)
+ */
+export type ModelExportParity = {
+    /**
+     * pending while its pipeline runs; failed also when the run failed (error)
+     */
+    state: 'pending' | 'passed' | 'failed';
+    pipelineRunId?: string;
+    /**
+     * The parity_report artifact (cadence.parity/1)
+     */
+    reportHash?: string;
+    /**
+     * WER(served) − WER(reference) on the sample, a fraction (0.001 = 0.1 points)
+     */
+    werDelta?: number;
+    /**
+     * Share of sample utterances with identical token sequences (else NFC text)
+     */
+    identicalShare?: number;
+    /**
+     * Word errors of the served transcripts against the reference's, per reference word
+     */
+    disagreement?: number;
+    compared?: 'tokens' | 'text';
+    utterances?: number;
+    /**
+     * Which thresholds failed
+     */
+    reasons?: Array<string>;
+    sample?: {
+        goldenSetVersionId?: string;
+        /**
+         * The sample dataset artifact (the first utterances by audio hash)
+         */
+        datasetHash?: string;
+        utterances?: number;
+        /**
+         * first-by-audio-hash
+         */
+        selection?: string;
+    };
+    servedBy?: {
+        targetId?: string;
+        serverVersion?: string;
+    };
+    error?: string;
+    checkedAt?: string;
+};
+
+/**
+ * One benchmark of an export, newest first in exports[].benchmarks
+ */
+export type ModelExportBenchmark = {
+    state: 'running' | 'done' | 'failed';
+    pipelineRunId?: string;
+    /**
+     * The benchmark_report artifact (cadence.benchmark/1)
+     */
+    reportHash?: string;
+    /**
+     * The target whose concurrency the verdict is taken at (absent: deploy.target_concurrency)
+     */
+    targetId?: string;
+    /**
+     * The staging target the streams ran through
+     */
+    stagingTargetId?: string;
+    serverVersion?: string;
+    cardClass?: string;
+    /**
+     * The target concurrency the verdict is taken at
+     */
+    streams: number;
+    levels?: Array<number>;
+    /**
+     * p95 latency per chunk from audio availability, at streams
+     */
+    p95ChunkLatencyMs?: number;
+    /**
+     * p95 time to final, at streams
+     */
+    p95TimeToFinalMs?: number;
+    budgetMs: number;
+    /**
+     * Streams per card: the largest level whose p95 stayed within the budget, every lower level within it too
+     */
+    maxStreamsWithinBudget?: number;
+    /**
+     * Processes outside Cadence used the card during the verdict's level
+     */
+    contended?: boolean;
+    verdict?: 'passed' | 'failed' | 'inconclusive';
+    error?: string;
+    createdAt?: string;
+    finishedAt?: string;
+};
+
+/**
+ * One deployable of a model version at a latency profile and format (model_exports, mex_…)
+ */
+export type ModelExport = {
+    /**
+     * mex_…
+     */
+    id: string;
+    modelVersionId: string;
+    profile: string;
+    format: string;
+    state: 'exporting' | 'exported' | 'failed';
+    /**
+     * The deployable artifact (cadence.deployable/1)
+     */
+    deployableHash?: string;
+    deployable?: ModelExportDeployable;
+    /**
+     * The project whose budget ran the export
+     */
+    projectId: string;
+    pipelineRunId?: string;
+    error?: string;
+    parity?: ModelExportParity;
+    benchmarks: Array<ModelExportBenchmark>;
+    rev: number;
+    createdBy: Actor;
+    createdAt: string;
+    updatedAt: string;
+};
+
+export type ModelExportRequest = {
+    /**
+     * The model version: ver_…, @alias or model/<name> (its newest version the project adopted)
+     */
+    version: string;
+    /**
+     * Latency profiles; default deploy.export_profiles (primary = eval.primary_profile)
+     */
+    profiles?: Array<string>;
+    /**
+     * One of the family's export formats; default its first
+     */
+    format?: string;
+    priority?: number;
+};
+
+export type ModelExportPlanItem = {
+    profile: string;
+    /**
+     * export: a step runs; exported or exporting: the export exists and is answered as it is
+     */
+    action: 'export' | 'exported' | 'exporting';
+    exportId?: string;
+    /**
+     * The pipeline step that exports this profile
+     */
+    step?: string;
+    deployableHash?: string;
+};
+
+export type ModelExportPlan = {
+    modelVersionId: string;
+    /**
+     * model/<name> <version>
+     */
+    modelVersion: string;
+    family: string;
+    format: string;
+    /**
+     * The family's export step kind (name@version)
+     */
+    kind: string;
+    profiles: Array<ModelExportPlanItem>;
+    /**
+     * The staging target whose card class and server version the engine is built for
+     */
+    stagingTargetId?: string;
+    estimate: PipelineEstimate;
+    warnings: Array<PipelineWarning>;
+    pipelineRun?: PipelineRun;
+    /**
+     * The export rows after the call (real calls)
+     */
+    exports?: Array<ModelExport>;
+};
+
+export type ModelCheckRequestBase = {
+    /**
+     * The model version: ver_…, @alias or model/<name>
+     */
+    version: string;
+    /**
+     * The export's latency profile; default the primary profile
+     */
+    profile?: string;
+    /**
+     * The export's format; default the family's first
+     */
+    format?: string;
+    /**
+     * The golden set whose first utterances by audio hash are the sample: ver_…, @alias or golden-set/<name>; default the project's first target golden set
+     */
+    goldenSet?: string;
+    priority?: number;
+};
+
+export type ModelParityRequest = ModelCheckRequestBase;
+
+export type ModelBenchmarkRequest = {
+    /**
+     * The model version: ver_…, @alias or model/<name>
+     */
+    version: string;
+    /**
+     * The export's latency profile; default the target's primary profile, else the primary profile
+     */
+    profile?: string;
+    format?: string;
+    /**
+     * Where the streamed audio comes from (the parity sample of this golden set); default the export's parity sample, else the project's first target golden set
+     */
+    goldenSet?: string;
+    /**
+     * The deployment target (dtg_… or name) whose concurrency the verdict is taken at; default deploy.target_concurrency
+     */
+    target?: string;
+    /**
+     * Concurrency levels; default deploy.benchmark_streams (the target's concurrency is always added)
+     */
+    streams?: Array<number>;
+    /**
+     * default deploy.benchmark_seconds_per_level
+     */
+    secondsPerLevel?: number;
+    priority?: number;
+};
+
+export type ModelCheckStep = {
+    step: string;
+    /**
+     * name@version
+     */
+    kind: string;
+    /**
+     * The compute job kind the step runs as (a serve step runs as eval for parity, benchmark for a benchmark)
+     */
+    jobKind?: string;
+};
+
+export type ModelCheckSample = {
+    goldenSetVersionId: string;
+    name: string;
+    version: string;
+    locale: string;
+    /**
+     * The language both sides decode in (the golden set's locale, or the neighbour a model was trained under)
+     */
+    language?: string;
+    /**
+     * Utterances in the sample
+     */
+    utterances: number;
+    hours?: number;
+    /**
+     * The sample dataset artifact
+     */
+    datasetHash: string;
+    /**
+     * first-by-audio-hash
+     */
+    selection: string;
+};
+
+export type ModelCheckTarget = {
+    id: string;
+    name: string;
+    kind: string;
+    serverVersion?: string;
+    cardClass?: string;
+    concurrency?: number;
+};
+
+export type ModelParityPlan = {
+    modelVersionId: string;
+    exportId: string;
+    profile: string;
+    format: string;
+    sample: ModelCheckSample;
+    staging: ModelCheckTarget;
+    /**
+     * Streams the served side decodes at once (deploy.parity_concurrency, the eval's batch)
+     */
+    concurrency?: number;
+    thresholds: {
+        maxWerDelta: number;
+        minIdenticalShare: number;
+        maxDisagreement: number;
+    };
+    steps: Array<ModelCheckStep>;
+    estimate: PipelineEstimate;
+    warnings: Array<PipelineWarning>;
+    pipelineRun?: PipelineRun;
+};
+
+export type ModelBenchmarkPlan = {
+    modelVersionId: string;
+    exportId: string;
+    profile: string;
+    format: string;
+    sample: ModelCheckSample;
+    staging: ModelCheckTarget;
+    target?: ModelCheckTarget;
+    /**
+     * The levels
+     */
+    streams: Array<number>;
+    targetStreams: number;
+    budgetMs: number;
+    secondsPerLevel: number;
+    steps: Array<ModelCheckStep>;
     estimate: PipelineEstimate;
     warnings: Array<PipelineWarning>;
     pipelineRun?: PipelineRun;
@@ -18617,6 +18989,153 @@ export type GoldenSetsAlignResponses = {
 };
 
 export type GoldenSetsAlignResponse = GoldenSetsAlignResponses[keyof GoldenSetsAlignResponses];
+
+export type ModelsExportData = {
+    body: ModelExportRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/models:export';
+};
+
+export type ModelsExportErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsExportError = ModelsExportErrors[keyof ModelsExportErrors];
+
+export type ModelsExportResponses = {
+    /**
+     * Dry run — the profiles to export and the estimate; or a real call with nothing left to export
+     */
+    200: ModelExportPlan;
+    /**
+     * Started — the plan with the pipeline run (one export step per profile)
+     */
+    201: ModelExportPlan;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ModelsExportResponse = ModelsExportResponses[keyof ModelsExportResponses];
+
+export type ModelsParityData = {
+    body: ModelCheckRequestBase;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/models:parity';
+};
+
+export type ModelsParityErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsParityError = ModelsParityErrors[keyof ModelsParityErrors];
+
+export type ModelsParityResponses = {
+    /**
+     * Dry run — the sample, the steps and the estimate
+     */
+    200: ModelParityPlan;
+    /**
+     * Started — the plan with the pipeline run
+     */
+    201: ModelParityPlan;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ModelsParityResponse = ModelsParityResponses[keyof ModelsParityResponses];
+
+export type ModelsBenchmarkData = {
+    body: ModelBenchmarkRequest;
+    headers: {
+        /**
+         * Client-chosen key; a repeat with the same key returns the original result
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Project slug
+         */
+        p: Slug;
+    };
+    query?: {
+        /**
+         * Validate and report what would happen without changing anything
+         */
+        dryRun?: boolean;
+    };
+    url: '/projects/{p}/models:benchmark';
+};
+
+export type ModelsBenchmarkErrors = {
+    /**
+     * Error (RFC 9457)
+     */
+    default: Problem;
+};
+
+export type ModelsBenchmarkError = ModelsBenchmarkErrors[keyof ModelsBenchmarkErrors];
+
+export type ModelsBenchmarkResponses = {
+    /**
+     * Dry run — the levels, the steps and the estimate
+     */
+    200: ModelBenchmarkPlan;
+    /**
+     * Started — the plan with the pipeline run
+     */
+    201: ModelBenchmarkPlan;
+    /**
+     * Gated; a person decides the approval on the approvals topic
+     */
+    202: ApprovalAccepted;
+};
+
+export type ModelsBenchmarkResponse = ModelsBenchmarkResponses[keyof ModelsBenchmarkResponses];
 
 export type DeploymentTargetsListData = {
     body?: never;

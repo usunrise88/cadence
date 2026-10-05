@@ -5,8 +5,10 @@
 //
 // The rules (docs/review/2026-09-30-phase-2-plan.md "The step job"):
 //   - one training job per card;
-//   - an interactive job (a live transcription session, R49) shares a card with training under the cap, but never
-//     with a benchmark (R30: latency measured beside a session is meaningless), and a benchmark never joins one;
+//   - an interactive job (a live transcription session, R49) shares a card with training under the cap;
+//   - a benchmark (phase 5, R30: latency measured beside other work is meaningless) takes its card alone: it starts
+//     only on a card without leases and nothing joins it; while one waits, at most deploy.benchmark_drain_max_minutes,
+//     the cards that accept benchmarks drain — no job behind it in start order starts there (Draining);
 //   - a job reserves its declared memory, or the card's whole remaining cap when it declares none;
 //   - a job fits when its reservation fits under the cap beside the card's other leases;
 //   - an idle card must also have the memory free that the reservation needs, by the worker's own telemetry (a
@@ -86,11 +88,14 @@ func Fit(c Card, n Need, now time.Time) (int, string) {
 		switch {
 		case n.JobKind == steps.JobTraining && h.JobKind == steps.JobTraining:
 			return 0, fmt.Sprintf("card %d already runs a training job", c.Config.Index)
-		case n.JobKind == steps.JobInteractive && h.JobKind == steps.JobBenchmark:
-			return 0, fmt.Sprintf("card %d runs a benchmark; a live session never shares its card", c.Config.Index)
+		case h.JobKind == steps.JobBenchmark:
+			return 0, fmt.Sprintf("card %d runs a benchmark, which takes its card alone", c.Config.Index)
 		case n.JobKind == steps.JobBenchmark && h.JobKind == steps.JobInteractive:
 			return 0, fmt.Sprintf("card %d holds a live session; a benchmark never shares its card", c.Config.Index)
 		}
+	}
+	if n.JobKind == steps.JobBenchmark && len(c.Held) > 0 {
+		return 0, fmt.Sprintf("card %d holds %d other lease(s); a benchmark takes its card alone (R30)", c.Config.Index, len(c.Held))
 	}
 	free := c.CapMB() - c.reservedMB()
 	want := n.MemoryMB
@@ -107,6 +112,18 @@ func Fit(c Card, n Need, now time.Time) (int, string) {
 		return 0, reason
 	}
 	return want, ""
+}
+
+// Draining reports whether card c drains for a waiting benchmark: it accepts benchmark jobs and the benchmark's
+// availability window is open, so no job behind the benchmark in start order may take it (06 "Exclusive
+// benchmarks"); the caller applies it only while the benchmark is within deploy.benchmark_drain_max_minutes of
+// waiting.
+func Draining(c Card, now time.Time) bool {
+	if !slices.Contains(c.Config.AllowedJobKinds, steps.JobBenchmark) {
+		return false
+	}
+	open, always, _ := c.Config.Windows.Availability(steps.JobBenchmark, now)
+	return always || open
 }
 
 // WindowFits reports why the job may not start now under windows, or "" when it may.

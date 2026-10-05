@@ -4835,6 +4835,111 @@ paths:
         "202": { $ref: "#/components/responses/ApprovalAccepted" }
         default: { $ref: "#/components/responses/Problem" }
 
+  # ---------------------------------------------------------------- model exports, parity, benchmarks (phase 5 · stream D1) — add paths below this line
+  # A model version never changes: what these add attaches to it (model_exports, read through models.get exports[]).
+  # Each runs a pipeline generated per request in the family's runtime (03 "Export, parity and benchmark"): the
+  # family's export, parity-reference and serve roles, then the neutral parity_score@1 / benchmark_score@1.
+  /projects/{p}/models:export:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.export
+      summary: Export a model version for serving, one deployable per latency profile (GPU spend)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Turn a registered model version (ver_…, @alias or model/<name>) into deployables the staging server and
+          production can load: one per latency profile (default deploy.export_profiles, the primary profile), in the
+          family's export format (default the family's first). Each runs the family's export step (for Nemotron: the
+          fp32 ONNX step graph, a TensorRT engine built on the card, the Triton model directory and the smoke client).
+          A profile already exported (or exporting) is answered as it is and not run again. Call it with dryRun=true
+          first: it answers the profiles, the step and the estimate, starting nothing. The real call answers the plan
+          with pipelineRun (plr_…; follow it with pipelineRuns.wait), or 202 with an approvalId when the GPU spend
+          needs a person. Then models.parity and models.benchmark; models.get shows exports[].
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelExportRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the profiles to export and the estimate; or a real call with nothing left to export
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelExportPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run (one export step per profile)
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelExportPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/models:parity:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.parity
+      summary: Check that an export decodes like the model it came from, through the staging server (R31; GPU spend)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Decode the fixed parity sample (the first deploy.parity_sample_utterances utterances by audio hash of a golden
+          set; default the project's first target golden set) twice: with the family's reference decoder at the eval's
+          batch, and through the staging server with the exported engine. parity_score@1 then compares them: passed
+          when |WER difference| ≤ deploy.parity_max_wer_delta (0.1 points), identical token sequences ≥
+          deploy.parity_min_identical_share and word disagreement ≤ deploy.parity_max_disagreement. The export must be
+          exported (export-missing otherwise; models.export first). dryRun=true answers the sample, the steps and the
+          estimate. The real call answers the plan with pipelineRun, or 202 with an approvalId. The verdict lands on
+          the export (models.get exports[].parity) and is what a canary promotion requires.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelParityRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the sample, the steps and the estimate
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelParityPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelParityPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
+  /projects/{p}/models:benchmark:
+    x-cadence: { entity: models, kind: model }
+    parameters: [{ $ref: "#/components/parameters/ProjectSlug" }]
+    post:
+      operationId: models.benchmark
+      summary: Stream audio through the staging server at real-time pace at each concurrency level and judge the latency budget (R31)
+      tags: [deployments]
+      x-cadence:
+        toolDescription: >
+          Measure an export on the staging server: the parity sample's audio streams at real-time pace at each level of
+          streams (default deploy.benchmark_streams, plus the target's concurrency), deploy.benchmark_seconds_per_level
+          each; benchmark_score@1 reports p50/p95/p99 latency per chunk from audio availability, time to final, RTF,
+          and the most streams within the budget (streams per card). The verdict is taken at target's concurrency
+          (a delivery target dtg_… or name; default deploy.target_concurrency): passed when p95 chunk latency ≤
+          deploy.latency_budget_over_chunk_ms, inconclusive when processes outside Cadence used the card during that
+          level. Every level takes its card alone (job kind benchmark: the card drains for up to
+          deploy.benchmark_drain_max_minutes first; training is never preempted). The export must be exported
+          (export-missing). dryRun=true answers the levels and the estimate; the real call answers the plan with
+          pipelineRun, or 202 with an approvalId. The report lands on models.get exports[].benchmarks.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/DryRun"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmarkRequest" } } }
+      responses:
+        "200":
+          description: Dry run — the levels, the steps and the estimate
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmarkPlan" } } }
+        "201":
+          description: Started — the plan with the pipeline run
+          content: { application/json: { schema: { $ref: "#/components/schemas/ModelBenchmarkPlan" } } }
+        "202": { $ref: "#/components/responses/ApprovalAccepted" }
+        default: { $ref: "#/components/responses/Problem" }
+
   # ---------------------------------------------------------------- deployment targets, promotion records, delivery (phase 5 · stream D3) — add paths below this line
   # Deployment targets are instance-wide (registry scope, R46): creating or changing one is an approval the admin
   # decides, for people too (preset rule deployment-targets). Promotion records are append-only and hash-chained per
@@ -5772,7 +5877,7 @@ components:
 
     JobKind:
       type: string
-      enum: [training, eval, shadow, export, data, interactive]
+      enum: [training, eval, shadow, export, data, interactive, benchmark]
     ComputeCard:
       type: object
       required: [index, name, cardClass, memoryGb, memoryCapGb, allowedJobKinds]
@@ -7502,7 +7607,7 @@ components:
         gpus: { type: integer, minimum: 0, maximum: 1, description: "Cards (1 in v1, R44)" }
         memoryGb: { type: number, minimum: 0, description: Card memory the step needs; a training step takes the card's whole cap }
         diskGb: { type: number, minimum: 0 }
-        jobKind: { type: string, enum: [training, eval, export, data, interactive], description: "Which compute job kinds may take it (interactive: a live transcription session, R49)" }
+        jobKind: { type: string, enum: [training, eval, export, data, interactive, shadow, benchmark], description: "Which compute job kinds may take it (interactive: a live transcription session, R49; a generated pipeline may run a step as another kind: a serve step as eval, shadow or benchmark, phase 5)" }
     ModelFamilyDescriptor:
       type: object
       required: [name, version, framework, architecture, latencyProfiles, roles]
@@ -7533,6 +7638,16 @@ components:
           type: object
           description: "Role → step kind (calibrate, train, average, transcribe, export, parity; materialize turns a base_model artifact into a checkpoint so evals can transcribe a base model; live serves transcription sessions, R48)"
           additionalProperties: { type: string }
+        exportFormats:
+          type: array
+          description: "Deployable formats the family's export role writes (phase 5): the format, the server kind it is built for, and which one is the default (data the control plane compares, never branches on)"
+          items:
+            type: object
+            required: [format]
+            properties:
+              format: { type: string, maxLength: 100 }
+              server: { type: string, maxLength: 40 }
+              default: { type: boolean }
         interactive:
           type: object
           required: [memoryMb]
@@ -9398,6 +9513,7 @@ components:
           properties:
             model: { $ref: "#/components/schemas/ModelPayload" }
             usedBy: { type: array, items: { $ref: "#/components/schemas/UsedBy" } }
+            exports: { type: array, items: { $ref: "#/components/schemas/ModelExport" }, description: "Deployables of this version, per latency profile and format, with their parity and benchmarks (phase 5; models.get)" }
     ModelVersionList:
       type: object
       required: [items]
@@ -11486,6 +11602,222 @@ components:
         sets: { type: array, items: { $ref: "#/components/schemas/GoldenSetAlignSet" } }
         skipped: { type: array, items: { $ref: "#/components/schemas/GoldenSetAlignSkip" } }
         secondsPerAudioHour: { type: number, description: "defaults.yaml eval.align_seconds_per_audio_hour: wall seconds an aligning step spends per audio hour, on a card" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+    # ---------------------------------------------------------------- model exports, parity, benchmarks schemas (phase 5 · stream D1) — add below
+    ModelExportDeployable:
+      type: object
+      description: "What deployable.json (cadence.deployable/1) says about serving the export, as data: the server, the engine and its precision, the memory and streams it was sized for"
+      properties:
+        format: { type: string }
+        server: { type: object, additionalProperties: true, description: "{kind, version, minVersion}: the server the model directory is built for" }
+        engine: { type: object, additionalProperties: true, description: "{kind, version, precision, tf32, cardClass, gpu, computeCapability}: an engine is specific to the card class and the engine version it was built with" }
+        modelDir: { type: string }
+        memoryMb: { type: integer, description: Card memory the served model reserves (engine, state pool for maxStreams, overhead) }
+        cudaMemoryPoolMb: { type: integer, description: "The server's CUDA memory pool the implicit state of maxStreams streams needs" }
+        maxStreams: { type: integer }
+        chunkMs: { type: integer }
+        precision: { type: string }
+        manifestSha256: { type: string, description: "SHA-256 of the model directory's sorted (sha256, path) lines; the delivery receipt's servedSha256 must equal it" }
+    ModelExportParity:
+      type: object
+      required: [state]
+      description: "The newest parity check of an export (R31)"
+      properties:
+        state: { type: string, enum: [pending, passed, failed], description: "pending while its pipeline runs; failed also when the run failed (error)" }
+        pipelineRunId: { type: string }
+        reportHash: { type: string, description: "The parity_report artifact (cadence.parity/1)" }
+        werDelta: { type: number, description: "WER(served) − WER(reference) on the sample, a fraction (0.001 = 0.1 points)" }
+        identicalShare: { type: number, description: Share of sample utterances with identical token sequences (else NFC text) }
+        disagreement: { type: number, description: "Word errors of the served transcripts against the reference's, per reference word" }
+        compared: { type: string, enum: [tokens, text] }
+        utterances: { type: integer }
+        reasons: { type: array, items: { type: string }, description: Which thresholds failed }
+        sample:
+          type: object
+          properties:
+            goldenSetVersionId: { type: string }
+            datasetHash: { type: string, description: "The sample dataset artifact (the first utterances by audio hash)" }
+            utterances: { type: integer }
+            selection: { type: string, description: "first-by-audio-hash" }
+        servedBy:
+          type: object
+          properties:
+            targetId: { type: string }
+            serverVersion: { type: string }
+        error: { type: string }
+        checkedAt: { type: string, format: date-time }
+    ModelExportBenchmark:
+      type: object
+      required: [state, budgetMs, streams]
+      description: "One benchmark of an export, newest first in exports[].benchmarks"
+      properties:
+        state: { type: string, enum: [running, done, failed] }
+        pipelineRunId: { type: string }
+        reportHash: { type: string, description: "The benchmark_report artifact (cadence.benchmark/1)" }
+        targetId: { type: string, description: "The target whose concurrency the verdict is taken at (absent: deploy.target_concurrency)" }
+        stagingTargetId: { type: string, description: The staging target the streams ran through }
+        serverVersion: { type: string }
+        cardClass: { type: string }
+        streams: { type: integer, description: The target concurrency the verdict is taken at }
+        levels: { type: array, items: { type: integer } }
+        p95ChunkLatencyMs: { type: number, description: "p95 latency per chunk from audio availability, at streams" }
+        p95TimeToFinalMs: { type: number, description: "p95 time to final, at streams" }
+        budgetMs: { type: number }
+        maxStreamsWithinBudget: { type: integer, description: "Streams per card: the largest level whose p95 stayed within the budget, every lower level within it too" }
+        contended: { type: boolean, description: Processes outside Cadence used the card during the verdict's level }
+        verdict: { type: string, enum: [passed, failed, inconclusive] }
+        error: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    ModelExport:
+      type: object
+      required: [id, modelVersionId, profile, format, state, projectId, benchmarks, rev, createdBy, createdAt, updatedAt]
+      description: "One deployable of a model version at a latency profile and format (model_exports, mex_…)"
+      properties:
+        id: { type: string, description: "mex_…" }
+        modelVersionId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        state: { type: string, enum: [exporting, exported, failed] }
+        deployableHash: { type: string, description: "The deployable artifact (cadence.deployable/1)" }
+        deployable: { $ref: "#/components/schemas/ModelExportDeployable" }
+        projectId: { type: string, description: The project whose budget ran the export }
+        pipelineRunId: { type: string }
+        error: { type: string }
+        parity: { $ref: "#/components/schemas/ModelExportParity" }
+        benchmarks: { type: array, items: { $ref: "#/components/schemas/ModelExportBenchmark" } }
+        rev: { type: integer }
+        createdBy: { $ref: "#/components/schemas/Actor" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ModelExportRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name> (its newest version the project adopted)" }
+        profiles: { type: array, maxItems: 10, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 50 }, description: "Latency profiles; default deploy.export_profiles (primary = eval.primary_profile)" }
+        format: { type: string, minLength: 1, maxLength: 100, description: "One of the family's export formats; default its first" }
+        priority: { type: integer, minimum: -100, maximum: 100 }
+    ModelExportPlanItem:
+      type: object
+      required: [profile, action]
+      properties:
+        profile: { type: string }
+        action: { type: string, enum: [export, exported, exporting], description: "export: a step runs; exported or exporting: the export exists and is answered as it is" }
+        exportId: { type: string }
+        step: { type: string, description: The pipeline step that exports this profile }
+        deployableHash: { type: string }
+    ModelExportPlan:
+      type: object
+      required: [modelVersionId, modelVersion, family, format, kind, profiles, estimate, warnings]
+      properties:
+        modelVersionId: { type: string }
+        modelVersion: { type: string, description: "model/<name> <version>" }
+        family: { type: string }
+        format: { type: string }
+        kind: { type: string, description: "The family's export step kind (name@version)" }
+        profiles: { type: array, items: { $ref: "#/components/schemas/ModelExportPlanItem" } }
+        stagingTargetId: { type: string, description: "The staging target whose card class and server version the engine is built for" }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+        exports: { type: array, items: { $ref: "#/components/schemas/ModelExport" }, description: "The export rows after the call (real calls)" }
+    ModelCheckRequestBase:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name>" }
+        profile: { type: string, minLength: 1, maxLength: 50, description: "The export's latency profile; default the primary profile" }
+        format: { type: string, minLength: 1, maxLength: 100, description: "The export's format; default the family's first" }
+        goldenSet: { type: string, minLength: 1, maxLength: 200, description: "The golden set whose first utterances by audio hash are the sample: ver_…, @alias or golden-set/<name>; default the project's first target golden set" }
+        priority: { type: integer, minimum: -100, maximum: 100 }
+    ModelParityRequest:
+      $ref: "#/components/schemas/ModelCheckRequestBase"
+    ModelBenchmarkRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version: { type: string, minLength: 1, maxLength: 200, description: "The model version: ver_…, @alias or model/<name>" }
+        profile: { type: string, minLength: 1, maxLength: 50, description: "The export's latency profile; default the target's primary profile, else the primary profile" }
+        format: { type: string, minLength: 1, maxLength: 100 }
+        goldenSet: { type: string, minLength: 1, maxLength: 200, description: "Where the streamed audio comes from (the parity sample of this golden set); default the export's parity sample, else the project's first target golden set" }
+        target: { type: string, minLength: 1, maxLength: 100, description: "The deployment target (dtg_… or name) whose concurrency the verdict is taken at; default deploy.target_concurrency" }
+        streams: { type: array, minItems: 1, maxItems: 12, uniqueItems: true, items: { type: integer, minimum: 1, maximum: 1024 }, description: "Concurrency levels; default deploy.benchmark_streams (the target's concurrency is always added)" }
+        secondsPerLevel: { type: number, minimum: 30, maximum: 1800, description: "default deploy.benchmark_seconds_per_level" }
+        priority: { type: integer, minimum: -100, maximum: 100 }
+    ModelCheckStep:
+      type: object
+      required: [step, kind]
+      properties:
+        step: { type: string }
+        kind: { type: string, description: "name@version" }
+        jobKind: { type: string, description: "The compute job kind the step runs as (a serve step runs as eval for parity, benchmark for a benchmark)" }
+    ModelCheckSample:
+      type: object
+      required: [goldenSetVersionId, name, version, locale, utterances, datasetHash, selection]
+      properties:
+        goldenSetVersionId: { type: string }
+        name: { type: string }
+        version: { type: string }
+        locale: { type: string }
+        language: { type: string, description: "The language both sides decode in (the golden set's locale, or the neighbour a model was trained under)" }
+        utterances: { type: integer, description: Utterances in the sample }
+        hours: { type: number }
+        datasetHash: { type: string, description: "The sample dataset artifact" }
+        selection: { type: string, description: "first-by-audio-hash" }
+    ModelCheckTarget:
+      type: object
+      required: [id, name, kind]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        kind: { type: string }
+        serverVersion: { type: string }
+        cardClass: { type: string }
+        concurrency: { type: integer }
+    ModelParityPlan:
+      type: object
+      required: [modelVersionId, exportId, profile, format, sample, staging, thresholds, steps, estimate, warnings]
+      properties:
+        modelVersionId: { type: string }
+        exportId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        sample: { $ref: "#/components/schemas/ModelCheckSample" }
+        staging: { $ref: "#/components/schemas/ModelCheckTarget" }
+        concurrency: { type: integer, description: "Streams the served side decodes at once (deploy.parity_concurrency, the eval's batch)" }
+        thresholds:
+          type: object
+          required: [maxWerDelta, minIdenticalShare, maxDisagreement]
+          properties:
+            maxWerDelta: { type: number }
+            minIdenticalShare: { type: number }
+            maxDisagreement: { type: number }
+        steps: { type: array, items: { $ref: "#/components/schemas/ModelCheckStep" } }
+        estimate: { $ref: "#/components/schemas/PipelineEstimate" }
+        warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
+        pipelineRun: { $ref: "#/components/schemas/PipelineRun" }
+    ModelBenchmarkPlan:
+      type: object
+      required: [modelVersionId, exportId, profile, format, sample, staging, streams, targetStreams, budgetMs, secondsPerLevel, steps, estimate, warnings]
+      properties:
+        modelVersionId: { type: string }
+        exportId: { type: string }
+        profile: { type: string }
+        format: { type: string }
+        sample: { $ref: "#/components/schemas/ModelCheckSample" }
+        staging: { $ref: "#/components/schemas/ModelCheckTarget" }
+        target: { $ref: "#/components/schemas/ModelCheckTarget" }
+        streams: { type: array, items: { type: integer }, description: The levels, ascending }
+        targetStreams: { type: integer }
+        budgetMs: { type: number }
+        secondsPerLevel: { type: number }
+        steps: { type: array, items: { $ref: "#/components/schemas/ModelCheckStep" } }
         estimate: { $ref: "#/components/schemas/PipelineEstimate" }
         warnings: { type: array, items: { $ref: "#/components/schemas/PipelineWarning" } }
         pipelineRun: { $ref: "#/components/schemas/PipelineRun" }

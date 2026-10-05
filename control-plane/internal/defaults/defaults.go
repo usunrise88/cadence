@@ -115,8 +115,26 @@ type Defaults struct {
 
 // Deploy holds the deployment defaults (docs/spec/03-pipelines-defaults.md "Export, parity and benchmark").
 type Deploy struct {
-	ParityMinIdenticalShare Param[float64] `yaml:"parity_min_identical_share"`
-	DeliveryPendingDays     Param[int]     `yaml:"delivery_pending_days"`
+	ExportProfiles              Param[[]string] `yaml:"export_profiles"`
+	ExportSeconds               Param[float64]  `yaml:"export_seconds"`
+	ParitySampleUtterances      Param[int]      `yaml:"parity_sample_utterances"`
+	ParityConcurrency           Param[int]      `yaml:"parity_concurrency"`
+	ParityMaxWERDelta           Param[float64]  `yaml:"parity_max_wer_delta"`
+	ParityMinIdenticalShare     Param[float64]  `yaml:"parity_min_identical_share"`
+	ParityMaxDisagreement       Param[float64]  `yaml:"parity_max_disagreement"`
+	LatencyBudgetOverChunkMs    Param[float64]  `yaml:"latency_budget_over_chunk_ms"`
+	TargetConcurrency           Param[int]      `yaml:"target_concurrency"`
+	BenchmarkStreams            Param[[]int]    `yaml:"benchmark_streams"`
+	BenchmarkSecondsPerLevel    Param[float64]  `yaml:"benchmark_seconds_per_level"`
+	BenchmarkWarmupSeconds      Param[float64]  `yaml:"benchmark_warmup_seconds"`
+	BenchmarkMaxForeignUtilPct  Param[float64]  `yaml:"benchmark_max_foreign_util_pct"`
+	BenchmarkDrainMaxMinutes    Param[float64]  `yaml:"benchmark_drain_max_minutes"`
+	ShadowMinHours              Param[float64]  `yaml:"shadow_min_hours"`
+	ShadowReplayAt              Param[string]   `yaml:"shadow_replay_at"`
+	ShadowReplayMaxHours        Param[float64]  `yaml:"shadow_replay_max_hours"`
+	ShadowArtifactRetentionDays Param[int]      `yaml:"shadow_artifact_retention_days"`
+	CanaryShare                 Param[float64]  `yaml:"canary_share"`
+	DeliveryPendingDays         Param[int]      `yaml:"delivery_pending_days"`
 }
 
 // Serving holds the staging serving defaults.

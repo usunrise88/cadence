@@ -309,8 +309,8 @@ func smokeFiles(sm Smoke) ([]File, error) {
 		seen  = map[string]bool{}
 	)
 	for _, it := range sm.Items {
-		if !pathSegRe.MatchString(it.Name) || !strings.HasSuffix(it.Name, ".wav") || seen[it.Name] {
-			return nil, fmt.Errorf("smoke file name %q: a unique name of letters, digits, . _ - ending in .wav", it.Name)
+		if !pathSegRe.MatchString(it.Name) || it.Name == "manifest.tsv" || it.Name == "transcribe" || seen[it.Name] {
+			return nil, fmt.Errorf("smoke file name %q: a unique name of letters, digits, . _ - (not manifest.tsv or transcribe)", it.Name)
 		}
 		seen[it.Name] = true
 		if strings.ContainsAny(it.Text, "\t\n\r") {
@@ -437,11 +437,33 @@ func (s StoreSources) sha256(hash string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// Smoke implements Sources. TODO(D1): the smoke set is ≤ 20 utterances of the export's parity sample with the text
-// the staging server wrote for them (the parity_report), and the client is the family's smoke transcriber (the
-// export role writes it into the deployable). Until stream D1 lands both, a bundle that ships a model fails here.
+// Smoke implements Sources without a source of smoke sets: a bundle that ships a model fails here. The server reads
+// the smoke set of the record's export instead (internal/modelexports Service.Smoke: ≤ 20 utterances of the
+// export's parity sample with what the staging server wrote for them, and the family's smoke client from the
+// deployable), through SmokeFrom.
 func (s StoreSources) Smoke(_ context.Context, rec promotions.Record) (Smoke, error) {
-	return Smoke{}, fmt.Errorf("record %s: the parity sample's smoke set and the family's smoke client come with model exports (stream D1): %w", rec.ID, errNoSource)
+	return Smoke{}, fmt.Errorf("record %s: no source of smoke sets (model exports): %w", rec.ID, errNoSource)
+}
+
+// SmokeSource answers the smoke set of a model version's deployable (internal/modelexports).
+type SmokeSource func(ctx context.Context, versionID, deployableHash string) (Smoke, error)
+
+// WithSmoke is Sources with the smoke set read by smoke for the record's model version and deployable.
+type WithSmoke struct {
+	Sources
+	From SmokeSource
+}
+
+// Smoke implements Sources.
+func (w WithSmoke) Smoke(ctx context.Context, rec promotions.Record) (Smoke, error) {
+	dep, _ := rec.Body["deployable"].(map[string]any)
+	model, _ := rec.Body["model"].(map[string]any)
+	hash, _ := dep["hash"].(string)
+	versionID, _ := model["versionId"].(string)
+	if hash == "" {
+		return Smoke{}, fmt.Errorf("record %s names no deployable hash", rec.ID)
+	}
+	return w.From(ctx, versionID, hash)
 }
 
 // Decoding implements Sources. TODO(B, D4): static boost lists ship as decoding configuration; until streams D4

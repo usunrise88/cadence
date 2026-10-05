@@ -44,6 +44,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/mcp"
 	"github.com/usunrise88/cadence/control-plane/internal/media"
 	"github.com/usunrise88/cadence/control-plane/internal/mixes"
+	"github.com/usunrise88/cadence/control-plane/internal/modelexports"
 	"github.com/usunrise88/cadence/control-plane/internal/mounts"
 	"github.com/usunrise88/cadence/control-plane/internal/notify"
 	"github.com/usunrise88/cadence/control-plane/internal/obs"
@@ -181,6 +182,8 @@ type Server struct {
 	promotions    *promotions.Service
 	delivery      *delivery.Service
 	deliveryLinks *delivery.Signer
+	// modelExports are model exports and their parity checks and benchmarks (phase 5 · stream D1).
+	modelExports *modelexports.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -255,6 +258,7 @@ func New(c Config) (*Server, error) {
 	c.Pipelines.SetMounts(s.mounts.Fingerprinter()) // what a step reads from mounts is in its input hash
 	s.annotation = s.newAnnotation()
 	s.annotation.Install(c.StepHooks) // after the dataset importer: a batch's cut becomes its golden set
+	s.newModelExports()               // model exports, parity checks, benchmarks (phase 5 · stream D1)
 	s.newDeploy()                     // deployment targets, promotion records, delivery bundles (phase 5 · stream D3)
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)

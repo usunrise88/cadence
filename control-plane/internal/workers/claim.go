@@ -135,6 +135,7 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 		cards  []queue.Card
 		locked bool // the card slots are locked and read (once, at the first job that needs a card)
 		after  *queueKey
+		drain  *queueKey // the first waiting benchmark within its drain time: jobs behind it leave its cards alone
 	)
 	// Pages of waiting jobs in start order until one fits: jobs that cannot run here (no card fits, a window is
 	// closed) must not hide one further down that can. At most claimPages pages are read per attempt.
@@ -162,9 +163,12 @@ func (s *Service) claimOnce(ctx context.Context, tx pgx.Tx, c Caller, in Claim, 
 				return nil, nil, err
 			}
 			locked = true
+			if drain, err = drainingFor(ctx, tx, now); err != nil {
+				return nil, nil, err
+			}
 		}
 		for _, cand := range cands {
-			card, capMB, ok := place(cand, cards, now)
+			card, capMB, ok := place(cand, cards, now, drain)
 			if !ok {
 				continue
 			}
@@ -228,18 +232,65 @@ const (
 	claimPages    = 20
 )
 
-// place picks the card for cand: the first by index where it fits, or no card for a step without a GPU.
-func place(cand candidate, cards []queue.Card, now time.Time) (*queue.Card, int, bool) {
+// place picks the card for cand: the first by index where it fits, or no card for a step without a GPU. While a
+// benchmark waits (drain), a job behind it in start order does not take a card that drains for it.
+func place(cand candidate, cards []queue.Card, now time.Time, drain *queueKey) (*queue.Card, int, bool) {
 	if !cand.spec.Resources.GPU {
 		return nil, 0, true
 	}
 	need := queue.NeedOf(cand.spec)
+	behind := drain != nil && cand.key.jobID != drain.jobID && drain.before(cand.key)
 	for i := range cards {
+		if behind && queue.Draining(cards[i], now) {
+			continue
+		}
 		if capMB, why := queue.Fit(cards[i], need, now); why == "" {
 			return &cards[i], capMB, true
 		}
 	}
 	return nil, 0, false
+}
+
+// before reports whether k comes before o in start order (waiting's ORDER BY).
+func (k queueKey) before(o queueKey) bool {
+	switch {
+	case k.interactive != o.interactive:
+		return k.interactive
+	case k.projectPriority != o.projectPriority:
+		return k.projectPriority > o.projectPriority
+	case k.jobPriority != o.jobPriority:
+		return k.jobPriority > o.jobPriority
+	case !k.enqueuedAt.Equal(o.enqueuedAt):
+		return k.enqueuedAt.Before(o.enqueuedAt)
+	}
+	return k.jobID < o.jobID
+}
+
+// drainingFor is the first waiting benchmark step job in start order that has waited less than
+// deploy.benchmark_drain_max_minutes (06 "Exclusive benchmarks"), or nil: while it waits, jobs behind it leave the
+// cards that accept benchmarks alone, so the card empties; past that time it yields and waits for a gap. Whichever
+// worker claims, the drain holds (a worker without the benchmark's kind must not fill the card either).
+func drainingFor(ctx context.Context, tx pgx.Tx, now time.Time) (*queueKey, error) {
+	maxWait := time.Duration(defaults.Get().Deploy.BenchmarkDrainMaxMinutes.Value * float64(time.Minute))
+	if maxWait <= 0 {
+		return nil, nil
+	}
+	prio := projectPriority("$2")
+	var k queueKey
+	err := tx.QueryRow(ctx, `SELECT s.job_id, `+prio+`, j.priority, s.enqueued_at
+		FROM step_jobs s JOIN jobs j ON j.id = s.job_id
+		LEFT JOIN projects p ON p.id = s.project_id
+		WHERE s.state = 'waiting' AND s.job_kind = 'benchmark' AND j.paused_at IS NULL AND j.cancel_requested_at IS NULL
+			AND s.enqueued_at > $1
+		ORDER BY `+prio+` DESC, j.priority DESC, s.enqueued_at, s.job_id LIMIT 1`, now.Add(-maxWait), defaultProjectPriority()).
+		Scan(&k.jobID, &k.projectPriority, &k.jobPriority, &k.enqueuedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read waiting benchmarks: %w", err)
+	}
+	return &k, nil
 }
 
 // projectPriority is the SQL expression of a step job's project queue priority (projects p joined on s.project_id):
