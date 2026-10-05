@@ -8,8 +8,9 @@ A step kind is a class registered under the ``cadence.steps`` entry-point group.
 - ``Params``: a pydantic v2 model in which every field carries ``x-cadence`` metadata (default, description, source,
   safe range, optionally ``defaultRef`` into defaults.yaml) — build fields with :func:`cadence_field`;
 - optionally ``role`` (the model-family role it fills: calibrate, train, average, transcribe, export, parity,
-  materialize), ``neutral`` (a runtime-neutral core kind shipped in every image), ``runtime`` (the runtime a framework
-  kind belongs to; None for neutral kinds), ``secrets`` (secret names it needs as environment variables),
+  materialize, live, serve), ``neutral`` (a runtime-neutral core kind shipped in every image), ``runtime`` (the
+  runtime a framework kind belongs to; None for neutral kinds), ``secrets`` (secret names it needs as environment
+  variables),
   ``optional_inputs`` (inputs of ``consumes`` a pipeline may leave unwired: a transcribe step's boost list; published
   as ``optionalInputs``) and ``optional_outputs`` (outputs a successful step may leave unwritten);
 - optionally ``deprecated_after`` (``YYYY-MM-DD``), with ``replaced_by`` (the ``name@version`` to pin instead) and

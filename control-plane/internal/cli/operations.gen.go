@@ -1266,6 +1266,42 @@ var Operations = []Operation{
 		},
 	},
 	{
+		ID: "models.benchmark", Entity: "models", Verb: "benchmark", Method: "POST", Path: "/projects/{p}/models:benchmark",
+		Summary:        "Stream audio through the staging server at real-time pace at each concurrency level and judge the latency budget (R31)",
+		Description:    "Measure an export on the staging server: the parity sample's audio streams at real-time pace at each level of streams (default deploy.benchmark_streams, plus the target's concurrency), deploy.benchmark_seconds_per_level each; benchmark_score@1 reports p50/p95/p99 latency per chunk from audio availability, time to final, RTF, and the most streams within the budget (streams per card). The verdict is taken at target's concurrency (a delivery target dtg_… or name; default deploy.target_concurrency): passed when p95 chunk latency ≤ deploy.latency_budget_over_chunk_ms, inconclusive when processes outside Cadence used the card during that level. Every level takes its card alone (job kind benchmark: the card drains for up to deploy.benchmark_drain_max_minutes first; training is never preempted). The export must be exported (export-missing). dryRun=true answers the levels and the estimate; the real call answers the plan with pipelineRun, or 202 with an approvalId. The report lands on models.get exports[].benchmarks.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Type: "string"},
+			{Name: "goldenSet", Type: "string", Description: "Where the streamed audio comes from (the parity sample of this golden set); default the export's parity sample, else the project's first target golden set"},
+			{Name: "priority", Type: "integer"},
+			{Name: "profile", Type: "string", Description: "The export's latency profile; default the target's primary profile, else the primary profile"},
+			{Name: "secondsPerLevel", Type: "number", Description: "default deploy.benchmark_seconds_per_level"},
+			{Name: "streams", Type: "array of integer", Description: "Concurrency levels; default deploy.benchmark_streams (the target's concurrency is always added)"},
+			{Name: "target", Type: "string", Description: "The deployment target (dtg_… or name) whose concurrency the verdict is taken at; default deploy.target_concurrency"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name>"},
+		}},
+	},
+	{
+		ID: "models.export", Entity: "models", Verb: "export", Method: "POST", Path: "/projects/{p}/models:export",
+		Summary:        "Export a model version for serving, one deployable per latency profile (GPU spend)",
+		Description:    "Turn a registered model version (ver_…, @alias or model/<name>) into deployables the staging server and production can load: one per latency profile (default deploy.export_profiles, the primary profile), in the family's export format (default the family's first). Each runs the family's export step (for Nemotron: the fp32 ONNX step graph, a TensorRT engine built on the card, the Triton model directory and the smoke client). A profile already exported (or exporting) is answered as it is and not run again. Call it with dryRun=true first: it answers the profiles, the step and the estimate, starting nothing. The real call answers the plan with pipelineRun (plr_…; follow it with pipelineRuns.wait), or 202 with an approvalId when the GPU spend needs a person. Then models.parity and models.benchmark; models.get shows exports[].",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Type: "string", Description: "One of the family's export formats; default its first"},
+			{Name: "priority", Type: "integer"},
+			{Name: "profiles", Type: "array of string", Description: "Latency profiles; default deploy.export_profiles (primary = eval.primary_profile)"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name> (its newest version the project adopted)"},
+		}},
+	},
+	{
 		ID: "models.get", Entity: "models", Verb: "get", Method: "GET", Path: "/registry/models/{id}",
 		Summary: "Get a model version with its model card, gate, lineage and the projects that use it",
 		Params: []Param{
@@ -1279,6 +1315,23 @@ var Operations = []Operation{
 			{Name: "collection", In: "query", Flag: "collection", Type: "string", Description: "Only versions of this collection (id reg_… or name, e.g. dataset/fleurs-he-smoke)"},
 			{Name: "state", In: "query", Flag: "state", Type: "string", Description: "Only versions in this state", Enum: []string{"draft", "frozen", "deprecated", "archived"}},
 		},
+	},
+	{
+		ID: "models.parity", Entity: "models", Verb: "parity", Method: "POST", Path: "/projects/{p}/models:parity",
+		Summary:        "Check that an export decodes like the model it came from, through the staging server (R31; GPU spend)",
+		Description:    "Decode the fixed parity sample (the first deploy.parity_sample_utterances utterances by audio hash of a golden set; default the project's first target golden set) twice: with the family's reference decoder at the eval's batch, and through the staging server with the exported engine. parity_score@1 then compares them: passed when |WER difference| ≤ deploy.parity_max_wer_delta (0.1 points), identical token sequences ≥ deploy.parity_min_identical_share and word disagreement ≤ deploy.parity_max_disagreement. The export must be exported (export-missing otherwise; models.export first). dryRun=true answers the sample, the steps and the estimate. The real call answers the plan with pipelineRun, or 202 with an approvalId. The verdict lands on the export (models.get exports[].parity) and is what a canary promotion requires.",
+		IdempotencyKey: true,
+		Params: []Param{
+			{Name: "p", In: "path", Flag: "project", Required: true, Type: "string", Description: "Project slug"},
+			{Name: "dryRun", In: "query", Flag: "dry-run", Type: "boolean", Description: "Validate and report what would happen without changing anything", Default: "false"},
+		},
+		Body: &Body{Required: true, Properties: []BodyProperty{
+			{Name: "format", Type: "string", Description: "The export's format; default the family's first"},
+			{Name: "goldenSet", Type: "string", Description: "The golden set whose first utterances by audio hash are the sample: ver_…, @alias or golden-set/<name>; default the project's first target golden set"},
+			{Name: "priority", Type: "integer"},
+			{Name: "profile", Type: "string", Description: "The export's latency profile; default the primary profile"},
+			{Name: "version", Required: true, Type: "string", Description: "The model version: ver_…, @alias or model/<name>"},
+		}},
 	},
 	{
 		ID: "models.register", Entity: "models", Verb: "register", Method: "POST", Path: "/projects/{p}/models:register",

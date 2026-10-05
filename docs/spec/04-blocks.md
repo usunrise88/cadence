@@ -188,15 +188,16 @@ Agent tools: `models.register` (phase 3, Block 3), `models.export`, `models.pari
 
 Gates: parity and latency budget must pass; shadow must reach a minimum volume before canary; canary, production and rollback need a person, and production and rollback are executed by that person through the generated delivery script.
 
-Specified for phase 5 (2026-10-05; the numbers marked **TBD spike E1** wait for the export, parity and Triton spike):
+Specified for phase 5 (2026-10-05; numbers from spike E1, `docs/spikes/E1-onnx-triton.md`; steps 2–4 built by stream D1):
 
 - Steps 2–4 are `models.export`, `models.parity` and `models.benchmark`: pipelines generated per request in the
   family's runtime (roles `export`, `serve`, `parity reference`) with neutral scorers (03 "Export, parity and
   benchmark (phase 5)"). Their results attach to the model version as exports (02 "Deployment entities").
 - Thresholds (R31, `deploy.*`): parity on a fixed 200-utterance sample of the first target golden set, WER difference
-  ≤ 0.1 points absolute and ≥ 99.5 % identical token sequences; p95 time to final at the primary profile ≤ chunk +
-  100 ms (180 ms at `80ms`) at the target's concurrency (32, a placeholder until Эра's peak is known). A3 measured
-  parity 0.00 points (199/200) and, in fp32 through a Python backend, 56.6 ms at one stream and 867 ms at 32.
+  ≤ 0.1 points absolute, ≥ 97 % identical token sequences (owner to confirm; R31 said 99.5 %) and word disagreement ≤
+  0.005; p95 chunk latency from audio availability ≤ 100 ms (a word waits at most chunk +
+  100 ms) at the target's concurrency (32, a placeholder until Эра's peak is known). E1 measured the served fp32
+  TensorRT engine at 99.0 % identical, Δ 0.000, and p95 20 ms at 32 streams, 63 ms at 256 (A3's Python backend: 867 ms at 32).
 - The staging Triton is the compose profile `serving`. Benchmarks take the card alone; shadow replay shares it from a
   serving reserve that training leaves alone (06 "Staging serving").
 - Step 5 is a shadow deployment (`deployments.new`) replayed every night from a calls mount until it reaches 20 h;

@@ -27,7 +27,7 @@ import (
 const Kind = "compute"
 
 // JobKinds are the kinds of work a card may accept (the contract's JobKind).
-var JobKinds = []string{"training", "eval", "shadow", "export", "data", "interactive"}
+var JobKinds = []string{"training", "eval", "shadow", "export", "data", "interactive", "benchmark"}
 
 // JobTraining is the job kind of training runs.
 const JobTraining = "training"

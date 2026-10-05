@@ -262,7 +262,7 @@ func TestBundleRefusesWhatDoesNotMatchTheRecord(t *testing.T) {
 		t.Errorf("an empty smoke set: %v", err)
 	}
 	f.svc.Sources = StoreSources{CAS: f.store}
-	if _, _, err := f.svc.assemble(t.Context(), f.rec, f.chain, f.key); err == nil || !strings.Contains(err.Error(), "stream D1") {
+	if _, _, err := f.svc.assemble(t.Context(), f.rec, f.chain, f.key); err == nil || !strings.Contains(err.Error(), "no source of smoke sets") {
 		t.Errorf("the default smoke source: %v", err)
 	}
 	if _, err := checkModel([]ModelFile{{Path: "config.pbtxt", SHA256: sum("other")}}, map[string]any{"files": []any{

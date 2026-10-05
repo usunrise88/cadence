@@ -3,11 +3,22 @@
 # family and its step kinds). PyTorch, NeMo, Lhotse and huggingface_hub come from the image and are never reinstalled.
 # Build context is the repository root:
 #   docker build -f worker/Dockerfile -t cadence/worker:dev .
+
+# The TensorRT that builds deployable engines (nemotron_export, phase 5 · stream D1): an engine runs only on the
+# TensorRT it was built with, so the builder is the staging server's own — trtexec and its libraries from the Triton
+# image the `serving` profile runs (26.08: TensorRT 11.2.1; spike E1), pinned by the same digest. They live under
+# /opt/tensorrt/<version>, apart from the TensorRT 10 the NeMo image ships; the step puts that lib/ on the library
+# path of the trtexec process only (cadence_nemo.deploy).
+FROM nvcr.io/nvidia/tritonserver:26.08-py3@sha256:9185ba5b33d2c85c9204b208957b4bbfc6b2b89066efc9192e0f60c2ab58cec0 AS tensorrt-11.2.1
+
 FROM nvcr.io/nvidia/nemo-speech:26.07@sha256:b8b1c094f1bbd1a28acec4a742ae8984f420c021293dd68e7cadb21ac2963ef0
 
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PYTHONUNBUFFERED=1
 # ffmpeg decodes the files a live transcription session uploads (any container; R47) — the image has libsndfile only.
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+COPY --from=tensorrt-11.2.1 /usr/bin/trtexec /opt/tensorrt/11.2.1/bin/trtexec
+COPY --from=tensorrt-11.2.1 /usr/lib/x86_64-linux-gnu/libnvinfer.so.11.2.1 /usr/lib/x86_64-linux-gnu/libnvinfer_builder_resource_sm*.so.11.2.1 /usr/lib/x86_64-linux-gnu/libnvinfer_plugin.so.11.2.1 /usr/lib/x86_64-linux-gnu/libnvonnxparser.so.11.2.1 /opt/tensorrt/11.2.1/lib/
+RUN cd /opt/tensorrt/11.2.1/lib && for f in libnvinfer libnvinfer_plugin libnvonnxparser; do ln -s "$f.so.11.2.1" "$f.so.11"; done
 COPY worker/pyproject.toml /src/worker/pyproject.toml
 COPY worker/cadence_worker /src/worker/cadence_worker
 COPY worker/packs/nemo/pyproject.toml /src/nemo/pyproject.toml

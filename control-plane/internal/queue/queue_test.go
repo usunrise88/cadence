@@ -56,6 +56,9 @@ func TestFit(t *testing.T) {
 		{"interactive never beside a benchmark", liveCard(Held{JobKind: "benchmark", MemoryMB: 4096}), Need{JobKind: "interactive", MemoryMB: 6000}, now, 0, "runs a benchmark"},
 		{"a benchmark never beside a session", liveCard(Held{JobKind: "interactive", MemoryMB: 6000}), Need{JobKind: "benchmark", MemoryMB: 4096}, now, 0, "holds a live session"},
 		{"training beside a session takes the rest", liveCard(Held{JobKind: "interactive", MemoryMB: 6000}), Need{JobKind: "training"}, now, 24*1024 - 6000, ""},
+		{"a benchmark takes an empty card whole", liveCard(), Need{JobKind: "benchmark"}, now, 24 * 1024, ""},
+		{"a benchmark never beside an eval", liveCard(Held{JobKind: "eval", MemoryMB: 4096}), Need{JobKind: "benchmark", MemoryMB: 4096}, now, 0, "takes its card alone"},
+		{"nothing joins a benchmark", liveCard(Held{JobKind: "benchmark", MemoryMB: 4096}), Need{JobKind: "eval", MemoryMB: 1024}, now, 0, "runs a benchmark"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

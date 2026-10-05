@@ -27,7 +27,12 @@ transcribe for every profile → baseline → materialize the base model → tra
 harness path, with a local content store and no control plane; every transcription is scored by the core
 [`wer_score`](../steps/wer-score.md) kind and its `scores` artifact checked. The score requires the trained model to beat a nearly untrained one (the family's `baseline`
 parameters, one step for the toy) on every profile, and the toy to reach a WER of at most 0.1 on its fixtures.
-Export and parity join in phase 5.
+Phase 5 adds [`toy_export`](../steps/toy-export.md) (role `export`: the checkpoint as an in-process `deployable`,
+format `toy-pt-dir`), [`toy_serve`](../steps/toy-serve.md) (role `serve`: the deployable decoded through a simulated
+server queue, with `serving_timings`) and `toy_transcribe` as the `parity` reference, so the suite also runs export →
+parity ([`parity_score`](../steps/parity-score.md)) → benchmark ([`benchmark_score`](../steps/benchmark-score.md))
+on every pull request: the serve role's contract (deployable + dataset → hypotheses with tokens + serving_timings) is
+proved on a CPU before a family's own streaming client to a staging server is.
 
 ## Place in the loop
 

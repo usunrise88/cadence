@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 21
+version: 22
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -454,7 +454,7 @@ compute:
           memory_gb: 96
           memory_cap_gb: 29
           serving_reserve_gb: 9
-          allowed_job_kinds: [training, eval, shadow, export, data, interactive]
+          allowed_job_kinds: [training, eval, shadow, export, data, interactive, benchmark]
 
 # Imports (docs/spec/08-resolutions.md R17, R18): what the dataset_import step kind starts from.
 data:
@@ -1131,15 +1131,117 @@ sweeps:
     source: Cadence recommendation
     range: { min: 0, max: 2147483647 }
 
-# Deployment (phase 5; docs/spec/03-pipelines-defaults.md "Export, parity and benchmark (phase 5)"). Stream D3 adds
-# what promotion records and delivery read; stream D1 adds the rest of the block.
+# Deployment (phase 5; docs/spec/03-pipelines-defaults.md "Export, parity and benchmark (phase 5)"; spike E1,
+# docs/spikes/E1-onnx-triton.md, measured the parity, latency and memory numbers on the staging card).
 deploy:
-  parity_min_identical_share:
-    value: 0.995
+  export_profiles:
+    value: [primary]
+    description: Latency profiles models.export writes when the request names none (primary = eval.primary_profile); one export per profile, because the attention context is baked into the graph
+    source: "R43; docs/spikes/E1-onnx-triton.md step 1 (one step graph per profile)"
+  export_seconds:
+    value: 300
+    unit: s
+    description: Estimate of one export step (the ONNX step graph on the CPU, then the engine built on the card), which the policy weighs against the GPU budgets
+    source: "Spike E1: 42 s per profile for the graph (CPU), 33 s for the fp32 TensorRT engine at 80 ms; model load and margin on top"
+    range: { min: 30, max: 7200 }
+  parity_sample_utterances:
+    value: 200
+    unit: utterances
+    description: Utterances of the parity sample, the first of the golden set's dataset by audio hash (every export of every model is compared on the same audio)
+    source: "R31; A3 and E1 acceptance (200 clips)"
+    range: { min: 20, max: 2000 }
+  parity_concurrency:
+    value: 8
+    unit: streams
+    description: Streams the served side of parity decodes at once, so its batches match the eval's (packs' transcribe batch); the reference decodes at the eval's batch too
+    source: "Spike E1 proposal 1: parity runs the served engine at the eval's batch (8), TF32 off on both sides"
+    range: { min: 1, max: 64 }
+  parity_max_wer_delta:
+    value: 0.001
     unit: fraction
-    description: Share of sample utterances whose token sequences (else NFC text) must be identical; also the delivery script's smoke check (of 20 smoke utterances, all must match)
-    source: "R31; A3 measured 199/200"
+    description: "Largest |WER(served) − WER(reference)| on the parity sample; 0.001 = 0.1 WER points absolute"
+    source: "R31; A3 acceptance ('within 0.1 point'); E1 measured 0.000 at 80 and 160 ms and +0.025 points at 1120 ms (fp32)"
+    range: { min: 0, max: 0.01 }
+  parity_min_identical_share:
+    value: 0.97
+    unit: fraction
+    description: Share of parity utterances whose token sequences (else NFC text) must be identical; also the delivery script's smoke check (of 20 smoke utterances, all must match)
+    source: "Spike E1 proposal 1 (owner to confirm, docs/spec/07 Open questions): R31's 0.995 fails NeMo against itself (198/200 = 0.985 between batch 8 and batch 1 at 80 ms); fp32 exports measured 0.96-0.99, fp16 0.76"
     range: { min: 0.9, max: 1 }
+  parity_max_disagreement:
+    value: 0.005
+    unit: fraction
+    description: Largest share of words the served transcripts differ from the reference's (word errors of the served text with the reference decode as the reference); catches a precision change that WER alone averages away
+    source: "Spike E1 proposal 1: fp32 exports 0.0005-0.0033, fp16 0.017"
+    range: { min: 0, max: 0.1 }
+  latency_budget_over_chunk_ms:
+    value: 100
+    unit: ms
+    description: "p95 latency of a chunk's result after the chunk's audio is complete, at the target concurrency: a word waits at most the profile's chunk plus this for its tokens (180 ms at 80ms)"
+    source: "R31; spike E1 reads 'time to final ≤ chunk + 100 ms' as p95 per-chunk latency ≤ 100 ms from audio availability"
+    range: { min: 0, max: 1000 }
+  target_concurrency:
+    value: 32
+    unit: streams
+    description: Concurrent streams the latency budget must hold at when the deployment target names none
+    source: "R31 · confirm: placeholder until Эра's peak concurrent calls per card are known"
+    range: { min: 1, max: 512 }
+  benchmark_streams:
+    value: [1, 8, 16, 32, 64, 128]
+    description: Concurrency levels a benchmark streams in turn (the target concurrency is added when missing); the most streams within the budget is the report's streams per card
+    source: "Spike E1 levels (1-256); 128 is the deployable's default stream capacity (packs' max_streams), which fits the stand's 7 GB serving reserve"
+  benchmark_seconds_per_level:
+    value: 120
+    unit: s
+    description: How long each level streams at real-time pace
+    source: "Cadence recommendation (E1 measured 45 s per level after a 5 s warm-up)"
+    range: { min: 30, max: 1800 }
+  benchmark_warmup_seconds:
+    value: 5
+    unit: s
+    description: The start of every level that is not counted (the server's first batches and the streams' ramp)
+    source: "Spike E1 (5 s warm-up per level)"
+    range: { min: 0, max: 120 }
+  benchmark_max_foreign_util_pct:
+    value: 10
+    unit: "%"
+    description: A level is marked contended when processes outside Cadence's server used more of the card than this; a contended level at the target concurrency makes the verdict inconclusive
+    source: "Cadence recommendation (R30: numbers beside other load are meaningless; E1 ran beside idle residents and labels its numbers as a lower bound)"
+    range: { min: 0, max: 100 }
+  benchmark_drain_max_minutes:
+    value: 30
+    unit: min
+    description: Longest a waiting benchmark keeps new leases off the cards that accept benchmarks before it yields and waits for a gap
+    source: Cadence recommendation (docs/spec/06-platform.md "Exclusive benchmarks")
+    range: { min: 0, max: 240 }
+  shadow_min_hours:
+    value: 20
+    unit: h
+    description: Hours of replayed call audio a shadow deployment needs before a canary
+    source: docs/spec/03-pipelines-defaults.md "Key defaults" (Cadence recommendation)
+    range: { min: 1, max: 1000 }
+  shadow_replay_at:
+    value: "02:00"
+    description: Local time (policies.timezone) the nightly shadow replay starts
+    source: Cadence recommendation
+  shadow_replay_max_hours:
+    value: 4
+    unit: h
+    description: Most call audio one night's replay takes per shadow deployment
+    source: "Cadence recommendation; spike E1 measured RTF 0.18 per stream at 32 streams (fp32 engine), so 4 h of calls replay in minutes at that concurrency"
+    range: { min: 0.5, max: 24 }
+  shadow_artifact_retention_days:
+    value: 90
+    unit: days
+    description: Days a night's shadow texts are kept (production-derived; the summary stays)
+    source: "R28 · confirm (captured-sample class)"
+    range: { min: 1, max: 3650 }
+  canary_share:
+    value: 0.05
+    unit: fraction
+    description: Traffic share a canary promotion asks for when the request names none
+    source: Cadence recommendation
+    range: { min: 0.01, max: 0.5 }
   delivery_pending_days:
     value: 7
     unit: days
@@ -1161,7 +1263,7 @@ serving:
       endpoint: "http://triton:8000"
       server: { kind: triton, version: "26.08" }
       serves:
-        - { family: nemo.fastconformer-rnnt.cache-aware, formats: [triton-onnx-cache-aware], profiles: [80ms, 160ms, 1120ms] }
+        - { family: nemo.fastconformer-rnnt.cache-aware, formats: [triton-tensorrt-cache-aware], profiles: [80ms, 160ms, 1120ms] }
     description: The staging deployment target seeded at first start (kind staging, the compose service's endpoint, what it serves); the server kind and version are data the delivery script and the serve steps read
     source: "R30; docs/spikes/E1-onnx-triton.md (Triton 26.08 serves the family's step graph at 80, 160 and 1120 ms with the sequence batcher and implicit state)"
   default_target:
@@ -1443,6 +1545,63 @@ packs:
       description: Trailing silence (in the decoder's emissions) after which NeMo's streaming pipeline closes a segment with an automatic end of utterance; live sessions and nemotron_transcribe use the same value, so their words agree
       source: "docs/spikes/A5-live-transcription.md \"Result\" (800 ms: the automatic endpoint lands 1.5 s after the utterance at 160 ms, 2.0 s at 1120 ms)"
       range: { min: 80, max: 10000 }
+    # nemotron_export and nemotron_parity (phase 5 · stream D1; spike E1, docs/spikes/E1-onnx-triton.md).
+    export_format:
+      value: triton-tensorrt-cache-aware
+      description: Deployable format the export writes — the TensorRT engine of the fp32 step graph in a Triton model directory (sequence batching, implicit state)
+      source: "docs/spikes/E1-onnx-triton.md \"What the spec should change\" 3 (R46: TensorRT serves 256 streams per card at 80 ms; ONNX Runtime's CUDA provider about 1)"
+      range: { values: [triton-tensorrt-cache-aware] }
+    export_card_class:
+      value: ""
+      description: Card class the engine is built for, recorded in the deployable (the control plane passes the staging target's cardClass); an engine runs only on the GPU and TensorRT it was built with
+      source: docs/spikes/E1-onnx-triton.md "What phase 5 should build" (an engine is keyed by card class and TensorRT version)
+    export_server_version:
+      value: "26.08"
+      description: Triton release the engine is built for; it picks the TensorRT the build uses (Triton 26.08 ships TensorRT 11.2.1), and the export refuses a release the worker image has no builder for
+      source: docs/spikes/E1-onnx-triton.md "Setup" (nvcr.io/nvidia/tritonserver:26.08-py3, TensorRT 11.2.1)
+      range: { values: ["26.08"] }
+    export_max_batch:
+      value: 64
+      unit: streams
+      description: Largest batch of one execution — the engine's optimisation profile goes from 1 to this, and Triton's max_batch_size equals it
+      source: "docs/spikes/E1-onnx-triton.md \"3 · Triton\" (B = 1..64; the average batch at 256 streams was 33)"
+      range: { min: 1, max: 256 }
+    export_opt_batch:
+      value: 32
+      unit: streams
+      description: Batch size TensorRT tunes its kernels for inside the profile
+      source: docs/spikes/E1-onnx-triton.md (trt_build.sh, opt 32)
+      range: { min: 1, max: 256 }
+    export_max_streams:
+      value: 128
+      unit: streams
+      description: Streams the served model keeps state for at once (the sequence batcher's candidate sequences); sizes the CUDA memory pool the server needs (serving.cudaMemoryPoolMb) and the model's reservation
+      source: "docs/spikes/E1-onnx-triton.md (fp32 engine within the 100 ms budget up to 256 streams; 128 keeps engine, state pool and overhead inside the stand's 7 GB serving reserve)"
+      range: { min: 1, max: 4096 }
+    export_queue_delay_us:
+      value: 1000
+      unit: us
+      description: How long the sequence batcher waits to fill a batch
+      source: docs/spikes/E1-onnx-triton.md (build_repo.py, 1 ms)
+      range: { min: 0, max: 100000 }
+    export_workspace_mb:
+      value: 2048
+      unit: MiB
+      description: TensorRT's workspace while building the engine (trtexec --memPoolSize)
+      source: docs/spikes/E1-onnx-triton.md (trt_build.sh; the build peaked at 2.4 GB of TensorRT allocations)
+      range: { min: 256, max: 16384 }
+    export_serving_overhead_mb:
+      value: 2300
+      unit: MB
+      description: Card memory a served model takes beyond its engine and its state pool (CUDA context, activations, Triton), added to the deployable's serving.memoryMb
+      source: "docs/spikes/E1-onnx-triton.md \"3 · Triton\" (8.7 GB peak = 2.4 GB engine + 4 GB pool + 2.3 GB)"
+      range: { min: 0, max: 16384 }
+    parity_smoke_utterances:
+      value: 20
+      unit: utterances
+      description: Utterances of the parity sample whose feature buffers the parity reference writes as smoke inputs (the delivery script streams them through the production server)
+      source: docs/spec/02-domain-projects-registry.md "Delivery bundle" (≤ 20 utterances of the parity sample)
+      range: { min: 0, max: 20 }
     # frame_vad (utterance ends for latency to final, R54; phase 3 stream R).
     vad_model:
       value: nvidia/Frame_VAD_Multilingual_MarbleNet_v2.0

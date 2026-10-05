@@ -105,10 +105,12 @@ type File struct {
 	Data []byte // small generated files
 }
 
-// SmokeItem is one smoke utterance: a 16 kHz WAV in the content store and the text the staging server wrote for it.
+// SmokeItem is one smoke utterance: the input the family's smoke client sends (a 16 kHz WAV, or the feature buffers of
+// a family whose caller sends features) in the content store, and what the staging server wrote for it (its text, or
+// its token ids).
 type SmokeItem struct {
-	Name string // file name under smoke/, e.g. 01.wav
-	Hash string // b3:… of the WAV
+	Name string // file name under smoke/: 01.wav, or 01.json for a family whose client sends features
+	Hash string // b3:… of the input file
 	Text string
 }
 

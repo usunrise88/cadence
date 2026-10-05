@@ -19,6 +19,8 @@ frame_vad = "cadence_nemo.steps.vad:FrameVadStep"
 nemotron_live = "cadence_nemo.steps.live:LiveStep"
 nemotron_serve = "cadence_nemo.steps.serve:ServeStep"
 whisper_transcribe = "cadence_nemo.steps.whisper_member:WhisperTranscribeStep"
+nemotron_export = "cadence_nemo.steps.export:ExportStep"
+nemotron_parity = "cadence_nemo.steps.parity:ParityStep"
 
 [project.entry-points."cadence.families"]
 "nemo.fastconformer-rnnt.cache-aware" = "cadence_nemo.family:FAMILY"

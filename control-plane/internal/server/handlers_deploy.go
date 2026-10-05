@@ -76,7 +76,7 @@ func (s *Server) newDeploy() {
 		return drafts, err
 	})
 	s.delivery = &delivery.Service{Pool: s.Pool, CAS: s.CAS, Jobs: s.Jobs, Templates: templates.FS,
-		Sources: delivery.StoreSources{CAS: s.CAS}, Defaults: s.defaultsDoc, Log: s.Log}
+		Sources: s.deliverySources(), Defaults: s.defaultsDoc, Log: s.Log}
 	var key []byte
 	if s.Secrets != nil {
 		key = s.Secrets.DeriveKey("delivery-link")

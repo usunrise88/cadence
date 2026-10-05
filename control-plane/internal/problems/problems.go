@@ -136,6 +136,12 @@ var (
 	ServingUnavailable = Type{"serving-unavailable", http.StatusServiceUnavailable, "Staging server unavailable"}
 	ServingOverCap     = Type{"serving-over-cap", http.StatusConflict, "Served model over its memory reservation"}
 	TargetDoesNotServe = Type{"target-does-not-serve", http.StatusUnprocessableEntity, "Target does not serve this model"}
+	// Model exports, parity and benchmarks (phase 5 · stream D1); the last three are what a canary promotion's
+	// checks answer (stream D4).
+	ExportMissing         = Type{"export-missing", http.StatusUnprocessableEntity, "Model export missing"}
+	ParityFailed          = Type{"parity-failed", http.StatusUnprocessableEntity, "Parity check not passed"}
+	LatencyBudgetExceeded = Type{"latency-budget-exceeded", http.StatusUnprocessableEntity, "Latency budget exceeded"}
+	BenchmarkMissing      = Type{"benchmark-missing", http.StatusUnprocessableEntity, "Benchmark missing"}
 )
 
 // Types lists every registered type.
@@ -162,6 +168,7 @@ func Types() []Type {
 		BatchIncomplete, AnnotationAgreementLow, BatchClosed, InvitationInvalid,
 		PromotionReceiptMismatch, DeliveryLinkInvalid,
 		ServingUnavailable, ServingOverCap, TargetDoesNotServe,
+		ExportMissing, ParityFailed, LatencyBudgetExceeded, BenchmarkMissing,
 	}
 }
 

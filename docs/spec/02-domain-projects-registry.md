@@ -497,9 +497,9 @@ model version by weights hash, or the base model version).
 ### Deployment entities (phase 5)
 
 _Specified 2026-10-05, before phase 5 starts (R30, R31, R33, R46; plan `docs/review/2026-10-05-phase-5-plan.md`).
-Numbers marked **TBD spike E1** come from the ONNX export, parity and Triton spike (`docs/spikes/E1-*.md`) and
-replace A3's first numbers. The shapes below are the working contract: each wave-1 stream adds its operations and
-schemas to `api/openapi.yaml` under its marker, then runs `make gen`._
+Spike E1 (`docs/spikes/E1-onnx-triton.md`) replaced A3's first numbers. The shapes below are the working contract:
+each wave-1 stream adds its operations and schemas to `api/openapi.yaml` under its marker, then runs `make gen`. Model
+exports, parity and benchmarks are built (stream D1, migration 0048: `model_exports` and `model_export_checks`)._
 
 A model version never changes. What phase 5 adds attaches to it, as reference alignments attach to a golden set:
 exports, their parity and benchmark reports, and the deployments and promotions built on them. IDs: model exports
@@ -512,11 +512,11 @@ exports, their parity and benchmark reports, and the deployments and promotions 
 
 | Field | Value |
 | --- | --- |
-| `modelVersionId`, `profile`, `format` | The key; `format` comes from the family's `export` role (03 "Export, parity and benchmark"), e.g. `triton-onnx-cache-aware` |
+| `modelVersionId`, `profile`, `format` | The key; `format` comes from the family's `export` role (03 "Export, parity and benchmark"), e.g. `triton-tensorrt-cache-aware` |
 | `deployableHash` | The `deployable` artifact (`cadence.deployable/1`); the same weights and export kind give the same hash, so asking again returns the row |
 | `state` | `exporting`, `exported`, `failed` (with the pipeline run's error) |
-| `parity` | `{state: pending|passed|failed, reportHash, werDelta, identicalShare, compared: tokens|text, sample: {goldenSetVersionId, utterances, selection}, servedBy: {targetId, serverVersion}}` |
-| `benchmarks[]` | `{reportHash, targetId, serverVersion, cardClass, streams, p95TimeToFinalMs, budgetMs, maxStreamsWithinBudget, contended, verdict: passed|failed|inconclusive}`, newest first (`inconclusive`: a contended level at the target concurrency, 06 "Staging serving") |
+| `parity` | The newest parity check: `{state: pending|passed|failed, pipelineRunId, reportHash, werDelta, identicalShare, disagreement, compared: tokens|text, utterances, reasons, sample: {goldenSetVersionId, datasetHash, utterances, selection}, servedBy: {targetId, serverVersion}, error, checkedAt}` (a row of `model_export_checks`) |
+| `benchmarks[]` | `{state: running|done|failed, pipelineRunId, reportHash, targetId, stagingTargetId, serverVersion, cardClass, streams, levels, p95ChunkLatencyMs, p95TimeToFinalMs, budgetMs, maxStreamsWithinBudget, contended, verdict: passed|failed|inconclusive, error}`, newest first (`inconclusive`: a contended level at the target concurrency, 06 "Staging serving") |
 
 `models.get` returns a model version with its `exports[]`; the Model document draws them.
 
@@ -539,7 +539,7 @@ name: era-production
 kind: delivery                       # staging: Cadence reaches it; delivery: only a person's delivery script does
 serves:                              # what promotion checks (R46)
   - family: nemo.fastconformer-rnnt.cache-aware   # a model-family collection name, compared as data
-    formats: [triton-onnx-cache-aware]
+    formats: [triton-tensorrt-cache-aware]
     profiles: [80ms]                 # the first is the primary profile the latency budget is checked at
 server: { kind: triton, version: "26.07" }
 endpoint: http://triton:8000         # staging only; a delivery target never has one
@@ -605,7 +605,7 @@ stage: canary              # canary | production (promotion); the stage restored
 trafficShare: 0.05
 project: { id: prj_…, slug: hebrew }
 model: { versionId: ver_…, version: "model/hebrew@2026-11-02.ab12cd", weightsHash: "b3:…", family: "…" }
-deployable: { hash: "b3:…", format: triton-onnx-cache-aware, profile: 80ms, modelName: asr-he-il-2026-11-02-ab12cd,
+deployable: { hash: "b3:…", format: triton-tensorrt-cache-aware, profile: 80ms, modelName: asr-he-il-2026-11-02-ab12cd,
               manifestSha256: "…", files: [{ path, sha256, bytes }] }
 decoding: { boostLists: [{ locale, domain, sha256, weight }] }
 previous: { versionId: ver_…, modelName: … }   # what stays loaded for an instant rollback
