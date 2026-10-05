@@ -23,6 +23,7 @@
   "nemotron_finetune@1": "39b0c40194ba4c700acc13d7022d5ad6595f5e85972d8974d5b3be5869655ec3",
   "nemotron_finetune@2": "39b0c40194ba4c700acc13d7022d5ad6595f5e85972d8974d5b3be5869655ec3",
   "nemotron_live@1": "e17cb4654143deedcab15a918e71832a31a5388391d4fbc81e4d7cd679fd28b2",
+  "nemotron_serve@1": "9531e446cda1e4cc2a5cfd9ad5a407e4910986cc290a393724732b6b7516ab14",
   "nemotron_transcribe@1": "2632112f31ed8a47cd9e3ef2fc5a4b12717ac2f42ada12210c85e41a224ab1a4",
   "nemotron_transcribe@2": "f3d7147a3ade92928dda1674778db463a8ce01bdc55025e4c2deede5302eb9ba",
   "nemotron_transcribe@3": "4d867dc04e0b490789be4a4a72e0cfd226d905895d79207cf62a3d1353eb9898",

@@ -723,6 +723,10 @@ export type ComputeCard = {
      */
     memoryCapGb: number;
     allowedJobKinds: Array<JobKind>;
+    /**
+     * Phase 5 (R30): the share of memoryCapGb a training step's whole-cap reservation leaves alone, for served models, shadow replay and live sessions (0: none)
+     */
+    servingReserveGb?: number;
     windows?: AvailabilityWindows;
     telemetry?: CardTelemetryReport;
 };
@@ -758,7 +762,7 @@ export type ComputeCardEdit = {
     index: number;
     name?: string;
     /**
-     * Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)
+     * Key into the estimate table in defaults.yaml (a corrected card: blackwell-96gb)
      */
     cardClass?: string;
     /**
@@ -766,6 +770,10 @@ export type ComputeCardEdit = {
      */
     memoryGb?: number;
     memoryCapGb?: number;
+    /**
+     * The share of the cap kept for served models, shadow replay and live sessions; at most the cap (R30)
+     */
+    servingReserveGb?: number;
     allowedJobKinds?: Array<JobKind>;
     windows?: AvailabilityWindows;
 };
@@ -870,6 +878,10 @@ export type DefaultCard = {
     card_class: string;
     memory_gb: number;
     memory_cap_gb: number;
+    /**
+     * The share of the cap kept for served models, shadow replay and live sessions (R30)
+     */
+    serving_reserve_gb?: number;
     allowed_job_kinds: Array<JobKind>;
 };
 
@@ -954,7 +966,7 @@ export type Defaults = {
      */
     deploy?: DefaultSection;
     /**
-     * Staging serving (phase 5): the staging target seeded at first start
+     * Staging serving (phase 5): the staging target seeded at first start, the server kinds' health and model-control paths, a served model's memory, its idle unload and the health check
      */
     serving?: DefaultSection;
     estimates: {
@@ -6694,13 +6706,17 @@ export type TranscriptionInput = {
 };
 
 /**
- * Exactly one of checkpointId, modelVersionId and baseModelVersionId
+ * Exactly one of checkpointId, modelVersionId, baseModelVersionId and deploymentId
  */
 export type TranscriptionTargetIn = {
     /**
      * A checkpoint of the project (ckp_…)
      */
     checkpointId?: string;
+    /**
+     * Phase 5 (R47): a deployment of the project (dep_…) whose export the staging target serves; the lane decodes through the staging server. A session's targets are all deployments or none
+     */
+    deploymentId?: string;
     /**
      * A model version (ver_…, model/<name>, or @alias)
      */
@@ -6771,11 +6787,11 @@ export type TranscriptionSession = {
      */
     family: string;
     /**
-     * The family's live role step kind (kind@version) that serves the session
+     * The family's live role step kind (kind@version) that serves the session; for deployment targets its serve role in relay mode
      */
     liveKind: string;
     /**
-     * Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model
+     * Card memory the interactive job reserves: the family's interactive.memoryMb plus extraCheckpointMb per further distinct model; for deployment targets the served model's reservation (serving.model_memory_gb unless its deployable states one)
      */
     reservationMb: number;
     /**
@@ -6796,9 +6812,9 @@ export type TranscriptionLane = {
      * The lane; live messages name it in target
      */
     target: 'A' | 'B' | 'C';
-    kind: 'checkpoint' | 'model' | 'base_model';
+    kind: 'checkpoint' | 'model' | 'base_model' | 'deployment';
     /**
-     * ckp_… or ver_…
+     * ckp_…, ver_… or dep_…
      */
     id: string;
     /**
@@ -9526,6 +9542,60 @@ export type GoldenSetAlignPlan = {
 };
 
 /**
+ * A staging target's server as the control plane's health check found it (every serving.health_check_seconds; 06 'Staging serving'). Delivery targets have none: Cadence never reaches them
+ */
+export type ServingHealth = {
+    /**
+     * unknown until the first check
+     */
+    state: 'unknown' | 'up' | 'down';
+    checkedAt?: string;
+    /**
+     * When the state last changed
+     */
+    since?: string;
+    /**
+     * Why the server is down (the health call's error or status)
+     */
+    detail?: string;
+    /**
+     * The health call's round trip
+     */
+    latencyMs?: number;
+};
+
+/**
+ * A model the serve steps loaded on a staging target: the control plane counts the leases that use it and unloads it once none has for serving.unload_idle_minutes
+ */
+export type ServedModel = {
+    /**
+     * The versioned model name on the server (cadence-<16 hex digits of the deployable's hash>)
+     */
+    model: string;
+    /**
+     * The deployable artifact (b3:…)
+     */
+    deployableHash: string;
+    /**
+     * Card memory the model reserves (the deployable's serving.memoryMb, else serving.model_memory_gb)
+     */
+    memoryMb: number;
+    /**
+     * in-use: a lease uses it; loaded: idle on the server; unloaded: removed by the idle unload, or found gone
+     */
+    state: 'in-use' | 'loaded' | 'unloaded';
+    /**
+     * Active leases that use the model
+     */
+    leases: number;
+    /**
+     * When the last lease that used it was granted or ended
+     */
+    lastUsedAt?: string;
+    unloadedAt?: string;
+};
+
+/**
  * One model family the target serves, in which deployable formats and latency profiles (R46); compared as data
  */
 export type DeploymentTargetServes = {
@@ -9665,6 +9735,11 @@ export type DeploymentTarget = {
     boost?: DeploymentTargetBoost;
     state: 'active' | 'archived';
     chain?: DeploymentTargetChain;
+    health?: ServingHealth;
+    /**
+     * Staging targets: the models the serve steps loaded, with their lease counts (phase 5 · stream D2)
+     */
+    servedModels?: Array<ServedModel>;
     /**
      * The approval that created the target
      */

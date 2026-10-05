@@ -3186,7 +3186,7 @@
                       "uniqueItems": true
                     },
                     "cardClass": {
-                      "description": "Key into the estimate table in defaults.yaml (a corrected card: blackwell-48gb)",
+                      "description": "Key into the estimate table in defaults.yaml (a corrected card: blackwell-96gb)",
                       "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
                       "type": "string"
                     },
@@ -3209,6 +3209,12 @@
                       "maxLength": 200,
                       "minLength": 1,
                       "type": "string"
+                    },
+                    "servingReserveGb": {
+                      "description": "The share of the cap kept for served models, shadow replay and live sessions; at most the cap (R30)",
+                      "format": "double",
+                      "minimum": 0,
+                      "type": "number"
                     },
                     "windows": {
                       "additionalProperties": {

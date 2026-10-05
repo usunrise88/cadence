@@ -580,7 +580,8 @@ func (s *Server) ComputeEdit(ctx context.Context, req api.ComputeEditRequestObje
 	}
 	in := compute.EditInput{Description: req.Body.Description}
 	for _, c := range deref(req.Body.Cards) {
-		e := compute.CardEdit{Index: c.Index, Name: c.Name, CardClass: c.CardClass, MemoryGB: c.MemoryGb, MemoryCapGB: c.MemoryCapGb}
+		e := compute.CardEdit{Index: c.Index, Name: c.Name, CardClass: c.CardClass, MemoryGB: c.MemoryGb, MemoryCapGB: c.MemoryCapGb,
+			ServingReserveGB: c.ServingReserveGb}
 		if c.AllowedJobKinds != nil {
 			kinds := make([]string, 0, len(*c.AllowedJobKinds))
 			for _, k := range *c.AllowedJobKinds {
@@ -628,6 +629,7 @@ func apiHost(h compute.Host) api.ComputeHost {
 		}
 		card := api.ComputeCard{
 			Index: c.Index, Name: c.Name, CardClass: c.CardClass, MemoryGb: c.MemoryGB, MemoryCapGb: c.MemoryCapGB, AllowedJobKinds: kinds,
+			ServingReserveGb: optionalFloat(c.ServingReserveGB),
 		}
 		if len(c.Windows) > 0 {
 			ws := api.AvailabilityWindows{}

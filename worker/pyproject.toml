@@ -114,5 +114,6 @@ testpaths = ["tests", "packs/toy/tests", "packs/nemo/tests", "packs/services/tes
 markers = [
   "gpu: needs a CUDA card; excluded from the default run",
   "conformance: the full conformance flow of a pack (make conformance)",
+  "serving: needs a running Triton (CADENCE_TEST_TRITON_URL); excluded from the default run",
 ]
-addopts = "-m 'not gpu and not conformance' --import-mode=importlib"
+addopts = "-m 'not gpu and not conformance and not serving' --import-mode=importlib"
