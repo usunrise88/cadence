@@ -36,6 +36,7 @@ Entities:
   datasets       evict export freeze get list materialize preview
   defaults       get
   deploymentTargets archive edit get list new
+  deployments    get list new promote rollback
   drafts         accept get list revert
   evals          gate get list new
   events         list
@@ -69,6 +70,7 @@ Entities:
   runs           calibrate get list new resume stage
   runtimes       get list
   secrets        list new
+  shadowReplays  get list new
   sources        archive edit get list new
   stepKinds      get list
   storage        get

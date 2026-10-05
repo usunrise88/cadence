@@ -30,6 +30,7 @@ import (
 	"github.com/usunrise88/cadence/control-plane/internal/data"
 	"github.com/usunrise88/cadence/control-plane/internal/defaults"
 	"github.com/usunrise88/cadence/control-plane/internal/delivery"
+	"github.com/usunrise88/cadence/control-plane/internal/deployments"
 	"github.com/usunrise88/cadence/control-plane/internal/drafts"
 	"github.com/usunrise88/cadence/control-plane/internal/evals"
 	"github.com/usunrise88/cadence/control-plane/internal/events"
@@ -187,6 +188,8 @@ type Server struct {
 	serving *serving.Service
 	// modelExports are model exports and their parity checks and benchmarks (phase 5 · stream D1).
 	modelExports *modelexports.Service
+	// deployments are shadow, canary and production deployments and their nightly shadow replays (phase 5 · D4).
+	deployments *deployments.Service
 }
 
 var _ api.StrictServerInterface = (*Server)(nil)
@@ -265,6 +268,7 @@ func New(c Config) (*Server, error) {
 	s.newDeploy()                        // deployment targets, promotion records, delivery bundles (phase 5 · stream D3)
 	s.serving = s.newServing()           // staging serving: target health, served models (phase 5 · stream D2)
 	s.transcriptions.Serving = s.serving // deployment lanes are checked against their staging target
+	s.newDeployments()                   // deployments, promotions' stages, shadow replay (phase 5 · stream D4)
 	window := time.Duration(s.defaultsDoc().Drafts.PresenceSeconds.Value) * time.Second
 	s.drafts = drafts.NewStore(time.Now, window)
 	s.mixes = mixes.NewService(s.drafts, s.defaultsDoc)

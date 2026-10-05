@@ -31,10 +31,11 @@ func (s *Server) newModelExports() {
 
 // deliverySources are the delivery bundle's sources: the content store, with the smoke set of the record's export.
 func (s *Server) deliverySources() delivery.Sources {
-	return delivery.WithSmoke{Sources: delivery.StoreSources{CAS: s.CAS},
+	smoke := delivery.WithSmoke{Sources: delivery.StoreSources{CAS: s.CAS},
 		From: func(ctx context.Context, versionID, deployableHash string) (delivery.Smoke, error) {
 			return s.modelExports.Smoke(ctx, s.Pool, versionID, deployableHash)
 		}}
+	return decodingSources{Sources: smoke, pool: s.Pool} // boost lists from the record's deployment step (stream D4)
 }
 
 // estimated is what the policy weighs of a plan.

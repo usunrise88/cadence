@@ -54,9 +54,8 @@ func (s *Server) newDeploy() {
 	if s.Secrets != nil {
 		keys.Secrets = s.Secrets
 	}
-	// TODO(D4): set Stages to internal/deployments, whose Confirm moves a deployment to its record's stage and
-	// whose Withdraw returns it; deployments.promote|rollback call s.promotions.Append and s.delivery.Build in the
-	// transaction that decides the approval.
+	// Stages is set by newDeployments (internal/deployments: Confirm moves a deployment to its record's stage,
+	// Withdraw returns it); deployments.promote|rollback append and build in the transaction deciding the approval.
 	s.promotions = &promotions.Service{Pool: s.Pool, Keys: keys, Defaults: s.defaultsDoc, Log: s.Log}
 	s.targets = &targets.Service{ServerKinds: delivery.ServerKinds(templates.FS)}
 	s.targets.OnCreated(func(ctx context.Context, tx pgx.Tx, t targets.Target) ([]events.Draft, error) {
