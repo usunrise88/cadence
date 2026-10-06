@@ -334,11 +334,17 @@ concurrent streams. **confirm**: target concurrency comes from Эра's peak; pl
 (0.001 as a fraction, A3's acceptance); identical sequences compare token ids, else the NFC text; the sample is the
 first 200 utterances by hash of the first target golden set; time to final runs from an utterance's last chunk sent at
 real-time pace to its final; a deployment target may name its own concurrency.*
+**Owner, 2026-10-05:** target concurrency 32 per card for now (`deploy.target_concurrency`); revisit with Эра's
+measured peak.
 
 **R32 · Эра interfaces** (spec gap) — **confirm** with Эра
 Defined in `api/openapi.yaml`: `samples.new` (call id, channel, span, audio or reference, production hypothesis,
 confidence, model version, redacted dialogue context, boost list used), `samples.edit` for operator corrections, and
 in the inference contract a `boost` field (phrases with weights, cap 100 per call).
+**Owner, 2026-10-05: deferred.** Эра cannot answer or connect now; testing the stage that needs it (shadow on real
+calls, canary traffic share, the samples push, corrections, dialogue context, per-call boost) waits a few weeks to a
+month. Until then Cadence builds only what needs no Эра answer, and the phase-5 gate waits.
+
 
 **R33 · Signed promotions** (spec gap)
 A Promotion record holds the model version, artifact hashes, approver and time, hash-chained to the previous record

@@ -814,12 +814,13 @@ Write before starting:
       — 06 "Staging serving" (2026-10-05); the served model's memory and throughput **TBD spike E1**
 - [ ] **spec** → *R29* PII redaction step: NER model for Hebrew, span alignment to cut audio, what "redacted" guarantees
       — needs the owner first (decisions brief, R29)
-- [ ] **spec** → *R32 · confirm* The Эра interfaces: samples push payload, operator corrections, dialogue context for the judge,
+- [ ] **spec** → *R32 · deferred* (owner, 2026-10-05: not possible now; testing this stage waits a few weeks to a
+      month) The Эра interfaces: samples push payload, operator corrections, dialogue context for the judge,
       the per-call boost-list field and its cap — needs Эра first (decisions brief, R32)
 - [x] **spec** → *R33* What makes a Promotion record "signed" — 02 "Promotion records" (2026-10-05)
 - [x] **spec** → *R31 · confirm* Parity tolerance and the latency budget per chunk size — the gate uses both, the defaults table has
       neither (04 says only "beyond tolerance"); A3 records the first numbers — 03 "Export, parity and benchmark" and
-      `deploy.*` (2026-10-05); the target concurrency (32) stays a placeholder until the owner answers
+      `deploy.*` (2026-10-05); the target concurrency is 32 (owner, 2026-10-05: keep 32 for now)
 
 Deployment
 - [x] `models.export` (ONNX cache-aware

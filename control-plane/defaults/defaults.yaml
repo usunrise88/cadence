@@ -4,7 +4,7 @@
 # the control-plane binary and packaged with the worker. Every value carries a description, a source and, where it
 # applies, a safe range; a value without a published source is a "Cadence recommendation" re-checked after the spikes.
 # Keys are addressed as <section>.<key> (x-cadence.defaultRef: training.steps). Bump `version` on every change.
-version: 23
+version: 24
 
 # The project wizard's Recommended mode (docs/spec/02-domain-projects-registry.md "Project wizard").
 wizard:
@@ -1184,7 +1184,7 @@ deploy:
     value: 32
     unit: streams
     description: Concurrent streams the latency budget must hold at when the deployment target names none
-    source: "R31 · confirm: placeholder until Эра's peak concurrent calls per card are known"
+    source: "R31 · owner 2026-10-05: 32 for now; revisit when Эра's peak concurrent calls per card are known"
     range: { min: 1, max: 512 }
   benchmark_streams:
     value: [1, 8, 16, 32, 64, 128]
