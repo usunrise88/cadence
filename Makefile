@@ -1,4 +1,4 @@
-.PHONY: up down gen check-gen lint test test-integration ui-e2e evals conformance delivery-test spikes-measure contrast e2e spikes web help-sync
+.PHONY: up down gen check-gen lint test test-integration ui-e2e evals conformance delivery-test spikes-measure contrast e2e spikes web help-sync book
 
 up:            ## build all images with one version and start postgres, control plane, agent host
 	CADENCE_VERSION=$${CADENCE_VERSION:-$$(git describe --tags --always --dirty)} docker compose up -d --build
@@ -64,6 +64,10 @@ web:           ## build the SPA and copy it into the control plane's embed direc
 
 help-sync:     ## mirror docs/help into control-plane/internal/help/content (embedded in the binary)
 	cd control-plane && go run ./cmd/helpsync
+
+book:          ## the HTML edition of the tutorial as one self-contained page: docs/tutorial/build/out/book.html
+	@if python3 -c 'import yaml' 2>/dev/null; then python3 docs/tutorial/build/build.py; \
+	else uv run --no-project --with pyyaml python3 docs/tutorial/build/build.py; fi
 
 spikes:        ## list spike briefs and their status
 	@grep -H '^Status:' docs/spikes/*.md
