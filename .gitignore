@@ -9,3 +9,4 @@ control-plane/bin/
 .venv/
 .claude/worktrees/
 worker/test-results/
+docs/tutorial/build/out/

@@ -170,7 +170,7 @@ The chapters in this map are the plan; correct the map when a chapter is written
 | Capture script (Playwright): plays tours, saves screenshots and target boxes | figures done (`capture/capture.mjs`, read-only); tours planned |
 | Documentation API key `.doc-capture-key` (owner creates: Settings → Credentials, project scope + registry read, expiry) | done (project `test`) |
 | Reference project `book-serbian`, `reference/scenario.md`, `reference/numbers.yaml` and the refresh script | planned |
-| HTML edition builder: chapters, glossary with hover, search, tours over screenshots; published as an Artifact | planned |
+| HTML edition builder: chapters, glossary with hover, search, tours over screenshots; published as an Artifact | first cut: `build/build.py` (`make book` → `build/out/book.html`, one page): chapters, contents from this file, annotated figures with embedded screenshots, "Figure pending" placeholders, visible `TBD`; glossary, search and tours planned |
 | In-app tour engine ("Show me" in the Help panel): spec in `11-ui-panels.md` + decision-log row first | planned |
 | `data-tour` attributes for tour targets that have no `data-command` / `data-panel` | planned, per chapter |
 
