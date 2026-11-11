@@ -6,8 +6,8 @@
 
 <p align="center">
   A self-hosted workbench for fine-tuning streaming ASR models, built so that people and AI agents work in it together.
-  Made for <a href="https://dialogist.cc">Dialogist platform</a>.
-  <a href="https://dialogist.cc/en/research/cadence/">Research release</a>
+  Made for <a  target="_blank" href="https://dialogist.cc">Dialogist platform</a>.
+  <a target="_blank" href="https://dialogist.cc/en/research/cadence/">Research release</a>
 </p>
 
 <p align="center">
